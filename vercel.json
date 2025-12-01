@@ -1,0 +1,16 @@
+{
+  "buildCommand": "prisma generate && npm run build",
+  "installCommand": "npm install",
+  "framework": null,
+  "regions": ["syd1"],
+  "functions": {
+    "api/index.js": {
+      "runtime": "nodejs20.x",
+      "includeFiles": "build/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/build/client/(.*)", "destination": "/build/client/$1" },
+    { "source": "/(.*)", "destination": "/api/index.js" }
+  ]
+}
