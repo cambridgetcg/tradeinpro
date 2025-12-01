@@ -1,0 +1,256 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+// ============================================================================
+// TRADE-IN SYSTEM MODELS
+// ============================================================================
+
+// Card prices fed from external source / managed by merchant
+model CardPrice {
+  id          String   @id @default(cuid())
+  cardName    String
+  setName     String
+  setCode     String?
+  rarity      String?
+  cardNumber  String?
+  variant     String?  // e.g., "Holo", "Reverse Holo", "1st Edition"
+
+  // Prices by condition (in cents to avoid floating point issues)
+  priceNM     Int      @default(0)  // Near Mint
+  priceLP     Int      @default(0)  // Lightly Played
+  priceMP     Int      @default(0)  // Moderately Played
+  priceHP     Int      @default(0)  // Heavily Played
+  priceDMG    Int      @default(0)  // Damaged
+
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tradeInItems TradeInItem[]
+
+  @@index([cardName])
+  @@index([setName])
+  @@index([setCode])
+}
+
+// Customer submitting trade-ins (linked to Shopify customer if available)
+model Customer {
+  id                 String   @id @default(cuid())
+  shopifyCustomerId  String?  @unique
+  email              String
+  firstName          String?
+  lastName           String?
+  phone              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  submissions   TradeInSubmission[]
+  payoutMethods PayoutMethod[]
+  payouts       Payout[]
+}
+
+// Customer's saved payout methods
+model PayoutMethod {
+  id            String   @id @default(cuid())
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id])
+
+  type          String   // BANK, PAYPAL
+
+  // Bank details
+  bankName      String?
+  accountName   String?
+  bsb           String?
+  accountNumber String?
+
+  // PayPal details
+  paypalEmail   String?
+
+  isDefault     Boolean  @default(false)
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([customerId])
+}
+
+// Main trade-in submission
+model TradeInSubmission {
+  id               String   @id @default(cuid())
+  submissionNumber String   @unique
+  customerId       String
+  customer         Customer @relation(fields: [customerId], references: [id])
+
+  status           String   @default("DRAFT")
+  // DRAFT, SUBMITTED, IN_TRANSIT, RECEIVED, GRADING,
+  // PENDING_APPROVAL, APPROVED, COMPLETED, CANCELLED, RETURNED
+
+  // Payout preference
+  payoutType       String   @default("STORE_CREDIT") // STORE_CREDIT, BANK, PAYPAL
+
+  // Totals (in cents)
+  quotedTotal      Int      @default(0)
+  finalTotal       Int?
+  bonusAmount      Int      @default(0)
+
+  // Shipping
+  shippingMethod   String?  // PREPAID, SELF_SHIP, DROP_OFF
+  trackingNumber   String?
+  labelUrl         String?
+
+  // Timestamps
+  submittedAt      DateTime?
+  receivedAt       DateTime?
+  gradedAt         DateTime?
+  approvedAt       DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  items   TradeInItem[]
+  notes   SubmissionNote[]
+  payout  Payout?
+
+  @@index([customerId])
+  @@index([status])
+  @@index([submissionNumber])
+}
+
+// Individual cards in a submission
+model TradeInItem {
+  id              String   @id @default(cuid())
+  submissionId    String
+  submission      TradeInSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  cardPriceId     String?
+  cardPrice       CardPrice? @relation(fields: [cardPriceId], references: [id])
+
+  // Card details (denormalized for history)
+  cardName        String
+  setName         String
+  setCode         String?
+  variant         String?
+
+  quantity        Int      @default(1)
+
+  // Condition
+  conditionClaimed String  // NM, LP, MP, HP, DMG
+  conditionActual  String? // Set during grading
+
+  // Prices (in cents)
+  quotedPrice     Int      @default(0)
+  finalPrice      Int?
+
+  adjustmentReason String?
+
+  status          String   @default("PENDING")
+  // PENDING, VERIFIED, ADJUSTED, REJECTED
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([submissionId])
+  @@index([cardPriceId])
+}
+
+// Notes/communication on submissions
+model SubmissionNote {
+  id           String   @id @default(cuid())
+  submissionId String
+  submission   TradeInSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  authorType   String   // CUSTOMER, MERCHANT, SYSTEM
+  authorName   String?
+  message      String
+  isInternal   Boolean  @default(false) // Internal notes not shown to customer
+
+  createdAt    DateTime @default(now())
+
+  @@index([submissionId])
+}
+
+// Payout records
+model Payout {
+  id           String   @id @default(cuid())
+  submissionId String   @unique
+  submission   TradeInSubmission @relation(fields: [submissionId], references: [id])
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+
+  type         String   // STORE_CREDIT, BANK, PAYPAL
+
+  amount       Int      // Base amount in cents
+  bonusAmount  Int      @default(0)
+  totalAmount  Int      // Final payout amount
+
+  status       String   @default("PENDING")
+  // PENDING, PROCESSING, COMPLETED, FAILED
+
+  // Store credit details
+  giftCardId   String?
+  giftCardCode String?
+
+  // Bank transfer details
+  bankReference String?
+
+  processedAt  DateTime?
+  failureReason String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+}
+
+// App settings per shop
+model TradeInSettings {
+  id                    String   @id @default(cuid())
+  shop                  String   @unique
+
+  storeCreditBonusPct   Int      @default(10) // 10% bonus for store credit
+  minSubmissionValue    Int      @default(2000) // $20 minimum in cents
+  maxItemsPerSubmission Int      @default(100)
+
+  autoApproveThreshold  Int      @default(500) // Auto-approve if adjustment < $5
+  holdPeriodDays        Int      @default(3)
+
+  freeShippingMinimum   Int      @default(5000) // Free label if > $50
+  returnAddress         String?  // JSON string
+
+  termsAndConditions    String?
+  gradingGuideUrl       String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
