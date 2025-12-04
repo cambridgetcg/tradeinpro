@@ -9,9 +9,30 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  const apiKey = process.env.SHOPIFY_API_KEY || "";
+  const url = new URL(request.url);
+  console.log("[app.tsx loader] Request:", {
+    pathname: url.pathname,
+    search: url.search,
+    hasAuthHeader: !!request.headers.get("authorization"),
+    hasCookie: !!request.headers.get("cookie"),
+  });
 
+  try {
+    const authResult = await authenticate.admin(request);
+    console.log("[app.tsx loader] Auth successful:", {
+      shop: authResult.session?.shop,
+      hasSession: !!authResult.session,
+      sessionId: authResult.session?.id ? `${authResult.session.id.slice(0, 10)}...` : "none",
+    });
+  } catch (error) {
+    console.error("[app.tsx loader] Auth failed:", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack?.split("\n").slice(0, 3) : undefined,
+    });
+    throw error;
+  }
+
+  const apiKey = process.env.SHOPIFY_API_KEY || "";
   return { apiKey };
 };
 

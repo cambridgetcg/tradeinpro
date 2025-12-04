@@ -5,6 +5,13 @@ declare global {
   var prismaGlobal: PrismaClient | undefined;
 }
 
+console.log("[db.server] Initializing Prisma client:", {
+  hasDbUrl: !!process.env.DATABASE_URL,
+  dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
+  nodeEnv: process.env.NODE_ENV,
+  hasExistingGlobal: !!global.prismaGlobal,
+});
+
 // Create a singleton PrismaClient that works in both dev and serverless production
 // In serverless, this prevents creating multiple connections on each request
 const prisma = global.prismaGlobal ?? new PrismaClient({

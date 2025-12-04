@@ -38,7 +38,15 @@ interface Alert {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  console.log("[app._index loader] Starting dashboard load");
+
+  try {
+    const { session } = await authenticate.admin(request);
+    console.log("[app._index loader] Auth OK, shop:", session?.shop);
+  } catch (error) {
+    console.error("[app._index loader] Auth failed:", error instanceof Error ? error.message : error);
+    throw error;
+  }
 
   // Get date for "this week" calculation (last 7 days)
   const oneWeekAgo = new Date();

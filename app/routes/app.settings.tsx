@@ -36,15 +36,24 @@ import {
 import { formatPrice } from "../lib/constants";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const settings = await getOrCreateSettings(session.shop);
+  console.log("[app.settings loader] Starting settings load");
 
-  return {
-    settings: {
-      ...settings,
-      returnAddress: parseReturnAddress(settings.returnAddress),
-    },
-  };
+  try {
+    const { session } = await authenticate.admin(request);
+    console.log("[app.settings loader] Auth OK, shop:", session?.shop);
+    const settings = await getOrCreateSettings(session.shop);
+    console.log("[app.settings loader] Settings loaded, id:", settings?.id);
+
+    return {
+      settings: {
+        ...settings,
+        returnAddress: parseReturnAddress(settings.returnAddress),
+      },
+    };
+  } catch (error) {
+    console.error("[app.settings loader] Error:", error instanceof Error ? error.message : error);
+    throw error;
+  }
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
