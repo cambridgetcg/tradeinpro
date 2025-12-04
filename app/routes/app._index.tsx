@@ -5,7 +5,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  console.log("[CARDFORUM] app._index.tsx loader - Loading dashboard...");
   await authenticate.admin(request);
+  console.log("[CARDFORUM] app._index.tsx loader - Authenticated, fetching data...");
 
   // Get dashboard statistics
   const [

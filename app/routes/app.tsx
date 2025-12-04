@@ -6,7 +6,16 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  console.log("[CARDFORUM] app.tsx loader - Request URL:", request.url);
+  console.log("[CARDFORUM] app.tsx loader - Authenticating...");
+
+  try {
+    await authenticate.admin(request);
+    console.log("[CARDFORUM] app.tsx loader - Authentication successful");
+  } catch (error) {
+    console.error("[CARDFORUM] app.tsx loader - Authentication failed:", error);
+    throw error;
+  }
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
