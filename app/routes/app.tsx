@@ -1,7 +1,8 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { NavMenu } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
 
@@ -31,14 +32,14 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Dashboard</s-link>
-        <s-link href="/app/trade-ins">Trade-Ins</s-link>
-        <s-link href="/app/buylist">Buylist</s-link>
-        <s-link href="/app/prices">Prices</s-link>
-        <s-link href="/app/inventory">Inventory</s-link>
-        <s-link href="/app/settings">Settings</s-link>
-      </s-app-nav>
+      <NavMenu>
+        <Link to="/app" rel="home">Dashboard</Link>
+        <Link to="/app/trade-ins">Trade-Ins</Link>
+        <Link to="/app/buylist">Buylist</Link>
+        <Link to="/app/prices">Prices</Link>
+        <Link to="/app/inventory">Inventory</Link>
+        <Link to="/app/settings">Settings</Link>
+      </NavMenu>
       <Outlet />
     </AppProvider>
   );
