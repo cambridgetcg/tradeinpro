@@ -3,11 +3,13 @@ import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
+import { AppProvider as PolarisProvider } from "@shopify/polaris";
+import enTranslations from "@shopify/polaris/locales/en.json";
 
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const authResult = await authenticate.admin(request);
+  await authenticate.admin(request);
   const apiKey = process.env.SHOPIFY_API_KEY || "";
 
   return { apiKey };
@@ -18,14 +20,16 @@ export default function App() {
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
-      <NavMenu>
-        <Link to="/app" rel="home">Dashboard</Link>
-        <Link to="/app/trade-ins">Trade-Ins</Link>
-        <Link to="/app/prices">Prices</Link>
-        <Link to="/app/payouts">Payouts</Link>
-        <Link to="/app/settings">Settings</Link>
-      </NavMenu>
-      <Outlet />
+      <PolarisProvider i18n={enTranslations}>
+        <NavMenu>
+          <Link to="/app" rel="home">Dashboard</Link>
+          <Link to="/app/trade-ins">Trade-Ins</Link>
+          <Link to="/app/prices">Prices</Link>
+          <Link to="/app/payouts">Payouts</Link>
+          <Link to="/app/settings">Settings</Link>
+        </NavMenu>
+        <Outlet />
+      </PolarisProvider>
     </AppProvider>
   );
 }
