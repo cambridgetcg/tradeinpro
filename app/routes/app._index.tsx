@@ -5,9 +5,21 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  console.log("[CARDFORUM] app._index.tsx loader - Loading dashboard...");
-  await authenticate.admin(request);
-  console.log("[CARDFORUM] app._index.tsx loader - Authenticated, fetching data...");
+  console.log("[CARDFORUM] ========== DASHBOARD LOADER START ==========");
+
+  try {
+    const authResult = await authenticate.admin(request);
+    console.log("[CARDFORUM] Dashboard auth success, shop:", authResult?.session?.shop);
+  } catch (error) {
+    if (error instanceof Response) {
+      console.log("[CARDFORUM] Dashboard auth redirect:", error.status);
+      throw error;
+    }
+    console.error("[CARDFORUM] Dashboard auth failed:", error);
+    throw error;
+  }
+
+  console.log("[CARDFORUM] Fetching dashboard data...");
 
   // Get dashboard statistics
   const [

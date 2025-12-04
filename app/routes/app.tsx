@@ -7,28 +7,45 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  console.log("[CARDFORUM] app.tsx loader - Request URL:", request.url);
-  console.log("[CARDFORUM] app.tsx loader - Authenticating...");
+  console.log("[CARDFORUM] ========== APP.TSX LOADER START ==========");
+  console.log("[CARDFORUM] Request URL:", request.url);
+  console.log("[CARDFORUM] Request method:", request.method);
+  console.log("[CARDFORUM] SHOPIFY_API_KEY exists:", !!process.env.SHOPIFY_API_KEY);
+  console.log("[CARDFORUM] DATABASE_URL exists:", !!process.env.DATABASE_URL);
 
   try {
-    await authenticate.admin(request);
-    console.log("[CARDFORUM] app.tsx loader - Authentication successful");
+    console.log("[CARDFORUM] Calling authenticate.admin...");
+    const authResult = await authenticate.admin(request);
+    console.log("[CARDFORUM] Auth successful! Session:", authResult?.session?.shop);
+
+    const apiKey = process.env.SHOPIFY_API_KEY || "";
+    console.log("[CARDFORUM] Returning apiKey (length):", apiKey.length);
+    console.log("[CARDFORUM] ========== APP.TSX LOADER END ==========");
+
+    return { apiKey };
   } catch (error) {
     // If authenticate.admin throws a Response (redirect for token exchange), return it
     if (error instanceof Response) {
-      console.log("[CARDFORUM] app.tsx loader - Auth redirect response, returning it");
-      return error;
+      console.log("[CARDFORUM] Auth threw Response - status:", error.status);
+      console.log("[CARDFORUM] Response headers:", Object.fromEntries(error.headers.entries()));
+      // For redirects, we need to throw, not return
+      throw error;
     }
-    console.error("[CARDFORUM] app.tsx loader - Authentication failed:", error);
+    console.error("[CARDFORUM] Auth error (non-Response):", error);
     throw error;
   }
-
-  // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  console.log("[CARDFORUM] App component rendering, loaderData:", loaderData);
+
+  const apiKey = loaderData?.apiKey || "";
+
+  if (!apiKey) {
+    console.error("[CARDFORUM] No API key in loaderData!");
+    return <div style={{ padding: "20px", color: "red" }}>Error: No API key configured</div>;
+  }
 
   return (
     <AppProvider embedded apiKey={apiKey}>
