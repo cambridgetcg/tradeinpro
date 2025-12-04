@@ -11,7 +11,7 @@ app.use(
 );
 
 app.all(
-  "*",
+  "/{*splat}",
   createRequestHandler({
     build: () => import("../build/server/index.js"),
     mode: process.env.NODE_ENV,
