@@ -32,6 +32,72 @@ model Session {
 }
 
 // ============================================================================
+// EXISTING TABLES FROM TRADING-CARD-PRICER (DO NOT MODIFY)
+// These tables are managed by the Lambda price fetcher
+// ============================================================================
+
+model ExternalCardPrice {
+  cardId             String    @id @map("card_id") @db.VarChar(255)
+  name               String    @db.VarChar(500)
+  marketPrice        Decimal   @map("market_price") @db.Decimal(10, 2)
+  tradeinPrice       Decimal   @map("tradein_price") @db.Decimal(10, 2)
+  currency           String    @db.VarChar(10)
+  source             String    @db.VarChar(50)
+  game               String    @db.VarChar(50)
+  shopifyProductId   String?   @map("shopify_product_id") @db.VarChar(255)
+  lastUpdated        DateTime? @default(now()) @map("last_updated") @db.Timestamptz
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  isAlternateArt     Boolean?  @default(false) @map("is_alternate_art")
+  variantType        String?   @map("variant_type") @db.VarChar(50)
+  rarity             String?   @db.VarChar(50)
+  printing           String?   @default("Normal") @db.VarChar(50)
+  marketPriceGbp     Decimal?  @map("market_price_gbp") @db.Decimal(10, 2)
+  tradeinPriceGbp    Decimal?  @map("tradein_price_gbp") @db.Decimal(10, 2)
+  exchangeRate       Decimal?  @map("exchange_rate") @db.Decimal(10, 6)
+  tcgplayerPriceUsd  Decimal?  @map("tcgplayer_price_usd") @db.Decimal(10, 2)
+  tcgplayerPriceGbp  Decimal?  @map("tcgplayer_price_gbp") @db.Decimal(10, 2)
+  cardmarketPriceEur Decimal?  @map("cardmarket_price_eur") @db.Decimal(10, 2)
+  cardmarketPriceGbp Decimal?  @map("cardmarket_price_gbp") @db.Decimal(10, 2)
+
+  @@index([game], map: "idx_card_prices_game")
+  @@index([source], map: "idx_card_prices_source")
+  @@index([lastUpdated], map: "idx_card_prices_last_updated")
+  @@index([shopifyProductId], map: "idx_card_prices_shopify")
+  @@index([isAlternateArt], map: "idx_card_prices_alt_art")
+  @@index([variantType], map: "idx_card_prices_variant")
+  @@index([marketPriceGbp], map: "idx_card_prices_market_gbp")
+  @@index([tradeinPriceGbp], map: "idx_card_prices_tradein_gbp")
+  @@index([tcgplayerPriceGbp], map: "idx_card_prices_tcgplayer_gbp")
+  @@index([cardmarketPriceGbp], map: "idx_card_prices_cardmarket_gbp")
+  @@map("card_prices")
+}
+
+model InventoryAltArt {
+  id                 Int       @id @default(autoincrement())
+  sku                String    @unique @db.VarChar(100)
+  cardType           String    @map("card_type") @db.VarChar(20)
+  releaseSet         String    @map("release_set") @db.VarChar(20)
+  originalSet        String    @map("original_set") @db.VarChar(20)
+  cardNumber         String    @map("card_number") @db.VarChar(10)
+  originalCardId     String    @map("original_card_id") @db.VarChar(20)
+  jpyPrice           Decimal?  @map("jpy_price") @db.Decimal(10, 2)
+  gbpCost            Decimal?  @map("gbp_cost") @db.Decimal(10, 2)
+  gbpSelling         Decimal?  @map("gbp_selling") @db.Decimal(10, 2)
+  ebayItemNumber     BigInt?   @map("ebay_item_number")
+  tcgplayerPriceUsd  Decimal?  @map("tcgplayer_price_usd") @db.Decimal(10, 2)
+  tcgplayerPriceGbp  Decimal?  @map("tcgplayer_price_gbp") @db.Decimal(10, 2)
+  cardmarketPriceEur Decimal?  @map("cardmarket_price_eur") @db.Decimal(10, 2)
+  cardmarketPriceGbp Decimal?  @map("cardmarket_price_gbp") @db.Decimal(10, 2)
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  lastUpdated        DateTime? @default(now()) @map("last_updated") @db.Timestamptz
+
+  @@index([cardType], map: "idx_inventory_alt_art_card_type")
+  @@index([releaseSet], map: "idx_inventory_alt_art_release_set")
+  @@index([originalCardId], map: "idx_inventory_alt_art_original_card_id")
+  @@map("inventory_alt_art")
+}
+
+// ============================================================================
 // TRADE-IN SYSTEM MODELS
 // ============================================================================
 
