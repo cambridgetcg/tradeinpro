@@ -4,6 +4,19 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import {
+  Page,
+  Card,
+  Text,
+  BlockStack,
+  InlineStack,
+  Badge,
+  Banner,
+  DataTable,
+  Button,
+  Box,
+  InlineGrid,
+} from "@shopify/polaris";
+import {
   SubmissionStatus,
   SubmissionStatusLabels,
   formatPrice,
@@ -44,6 +57,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { session } = await authenticate.admin(request);
     console.log("[app._index loader] Auth OK, shop:", session?.shop);
   } catch (error) {
+    if (error instanceof Response) {
+      return error;
+    }
     console.error("[app._index loader] Auth failed:", error instanceof Error ? error.message : error);
     throw error;
   }
@@ -248,493 +264,195 @@ export default function Dashboard() {
     });
   };
 
+  const getStatusBadge = (status: string) => {
+    const statusTones: Record<string, "info" | "success" | "warning" | "critical" | "attention"> = {
+      DRAFT: "info",
+      SUBMITTED: "info",
+      IN_TRANSIT: "info",
+      RECEIVED: "attention",
+      GRADING: "attention",
+      PENDING_APPROVAL: "warning",
+      APPROVED: "success",
+      COMPLETED: "success",
+      CANCELLED: "critical",
+      RETURNED: "critical",
+    };
+
+    const label =
+      SubmissionStatusLabels[status as keyof typeof SubmissionStatusLabels] ||
+      status.replace(/_/g, " ");
+
+    return <Badge tone={statusTones[status] || "info"}>{label}</Badge>;
+  };
+
+  const recentActivityRows = recentSubmissions.map((submission) => [
+    <Link key={submission.id} to={`/app/trade-ins/${submission.id}`} style={{ textDecoration: "none" }}>
+      <Text as="span" fontWeight="semibold">{submission.submissionNumber}</Text>
+    </Link>,
+    submission.customerName,
+    getStatusBadge(submission.status),
+    `${submission.itemCount} item${submission.itemCount !== 1 ? "s" : ""}`,
+    formatPrice(submission.quotedTotal),
+    formatDate(submission.createdAt),
+  ]);
+
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          marginBottom: "24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 600 }}>
-            Trade-In Dashboard
-          </h1>
-          <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-            Manage your card trade-in submissions
-          </p>
-        </div>
-        <Link
-          to="/app/trade-ins"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            padding: "10px 16px",
-            background: "#000",
-            color: "#fff",
-            borderRadius: "6px",
-            textDecoration: "none",
-            fontSize: "14px",
-            fontWeight: 500,
-          }}
-        >
+    <Page
+      title="Trade-In Dashboard"
+      subtitle="Manage your card trade-in submissions"
+      primaryAction={
+        <Button variant="primary" url="/app/trade-ins">
           View All Submissions
-        </Link>
-      </div>
-
-      {/* Alerts */}
-      {alerts.length > 0 && (
-        <div style={{ marginBottom: "24px" }}>
-          {alerts.map((alert, index) => (
-            <AlertCard key={index} alert={alert} />
-          ))}
-        </div>
-      )}
-
-      {/* Stats Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "16px",
-          marginBottom: "32px",
-        }}
-      >
-        <StatCard
-          title="Pending Arrival"
-          value={stats.pendingArrival}
-          color="#3b82f6"
-          link="/app/trade-ins?status=SUBMITTED,IN_TRANSIT"
-        />
-        <StatCard
-          title="Needs Grading"
-          value={stats.needsGrading}
-          color="#f59e0b"
-          link="/app/trade-ins?status=RECEIVED,GRADING"
-        />
-        <StatCard
-          title="Awaiting Approval"
-          value={stats.awaitingApproval}
-          color="#8b5cf6"
-          link="/app/trade-ins?status=PENDING_APPROVAL"
-        />
-        <StatCard
-          title="Completed This Week"
-          value={stats.completedThisWeek}
-          color="#10b981"
-          link="/app/trade-ins?status=COMPLETED"
-        />
-      </div>
-
-      {/* Value Summary */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "16px",
-          marginBottom: "32px",
-        }}
-      >
-        <ValueCard
-          title="Pending Trade-In Value"
-          value={formatPrice(stats.totalPendingValue)}
-          subtitle="Across active submissions"
-        />
-        <ValueCard
-          title="Total Completed Payouts"
-          value={formatPrice(stats.totalCompletedValue)}
-          subtitle="All time"
-        />
-        <Link to="/app/prices" style={{ textDecoration: "none" }}>
-          <ValueCard
-            title="Active Cards in Price List"
-            value={stats.totalActiveCards.toLocaleString()}
-            subtitle="Click to manage"
-            clickable
-          />
-        </Link>
-      </div>
-
-      {/* Recent Submissions */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "16px 20px",
-            borderBottom: "1px solid #e5e7eb",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
-            Recent Activity
-          </h2>
-          <Link
-            to="/app/trade-ins"
-            style={{ color: "#3b82f6", fontSize: "14px", textDecoration: "none" }}
+        </Button>
+      }
+    >
+      <BlockStack gap="500">
+        {/* Alerts */}
+        {alerts.map((alert, index) => (
+          <Banner
+            key={index}
+            title={alert.title}
+            tone={alert.type === "critical" ? "critical" : alert.type === "warning" ? "warning" : "info"}
+            action={alert.link ? { content: alert.linkText || "View", url: alert.link } : undefined}
           >
-            View all →
-          </Link>
-        </div>
+            <p>{alert.message}</p>
+          </Banner>
+        ))}
 
-        {recentSubmissions.length === 0 ? (
-          <div
-            style={{
-              padding: "40px 20px",
-              textAlign: "center",
-              color: "#6b7280",
-            }}
-          >
-            <p style={{ margin: 0, fontSize: "16px" }}>No submissions yet</p>
-            <p style={{ margin: "8px 0 0", fontSize: "14px" }}>
-              Trade-in submissions will appear here once customers start
-              submitting.
-            </p>
-          </div>
-        ) : (
-          <div>
-            {recentSubmissions.map((submission) => (
-              <Link
-                key={submission.id}
-                to={`/app/trade-ins/${submission.id}`}
-                style={{ textDecoration: "none", color: "inherit" }}
-              >
-                <div
-                  style={{
-                    padding: "16px 20px",
-                    borderBottom: "1px solid #e5e7eb",
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1fr 1fr 100px",
-                    alignItems: "center",
-                    cursor: "pointer",
-                    transition: "background 0.15s",
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "#f9fafb")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "transparent")
-                  }
-                >
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
-                      <strong style={{ fontFamily: "monospace" }}>
-                        {submission.submissionNumber}
-                      </strong>
-                      <StatusBadge status={submission.status} />
-                    </div>
-                    <div
-                      style={{
-                        color: "#6b7280",
-                        fontSize: "14px",
-                        marginTop: "4px",
-                      }}
-                    >
-                      {submission.customerName}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 600 }}>
-                      {formatPrice(submission.quotedTotal)}
-                    </div>
-                    <div style={{ color: "#6b7280", fontSize: "13px" }}>
-                      {submission.itemCount} item
-                      {submission.itemCount !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      color: "#6b7280",
-                      fontSize: "14px",
-                      textAlign: "center",
-                    }}
-                  >
-                    {formatDate(submission.createdAt)}
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <span
-                      style={{
-                        color: "#3b82f6",
-                        fontSize: "14px",
-                      }}
-                    >
-                      View →
-                    </span>
-                  </div>
-                </div>
+        {/* Stats Cards */}
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Pending Arrival</Text>
+              <Text as="p" variant="headingXl" fontWeight="bold">{stats.pendingArrival}</Text>
+              <Link to="/app/trade-ins?status=SUBMITTED,IN_TRANSIT">
+                <Text as="span" variant="bodySm" tone="subdued">View submissions</Text>
               </Link>
-            ))}
-          </div>
-        )}
-      </div>
+            </BlockStack>
+          </Card>
 
-      {/* Quick Actions */}
-      <div
-        style={{
-          marginTop: "32px",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "16px",
-        }}
-      >
-        <QuickActionCard
-          title="Price Management"
-          description="Update trade-in prices and add new cards"
-          link="/app/prices"
-          icon="💰"
-        />
-        <QuickActionCard
-          title="Settings"
-          description="Configure multipliers, thresholds, and notifications"
-          link="/app/settings"
-          icon="⚙️"
-        />
-        <QuickActionCard
-          title="Reports"
-          description="View analytics and export data"
-          link="/app/reports"
-          icon="📊"
-        />
-      </div>
-    </div>
-  );
-}
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Needs Grading</Text>
+              <Text as="p" variant="headingXl" fontWeight="bold">{stats.needsGrading}</Text>
+              <Link to="/app/trade-ins?status=RECEIVED,GRADING">
+                <Text as="span" variant="bodySm" tone="subdued">Start grading</Text>
+              </Link>
+            </BlockStack>
+          </Card>
 
-function AlertCard({ alert }: { alert: Alert }) {
-  const colors = {
-    warning: { bg: "#fef3c7", border: "#f59e0b", text: "#92400e" },
-    info: { bg: "#dbeafe", border: "#3b82f6", text: "#1e40af" },
-    critical: { bg: "#fee2e2", border: "#ef4444", text: "#991b1b" },
-  };
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Awaiting Approval</Text>
+              <Text as="p" variant="headingXl" fontWeight="bold">{stats.awaitingApproval}</Text>
+              <Link to="/app/trade-ins?status=PENDING_APPROVAL">
+                <Text as="span" variant="bodySm" tone="subdued">Review submissions</Text>
+              </Link>
+            </BlockStack>
+          </Card>
 
-  const color = colors[alert.type];
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Completed This Week</Text>
+              <Text as="p" variant="headingXl" fontWeight="bold">{stats.completedThisWeek}</Text>
+              <Link to="/app/trade-ins?status=COMPLETED">
+                <Text as="span" variant="bodySm" tone="subdued">View completed</Text>
+              </Link>
+            </BlockStack>
+          </Card>
+        </InlineGrid>
 
-  return (
-    <div
-      style={{
-        padding: "16px",
-        background: color.bg,
-        borderLeft: `4px solid ${color.border}`,
-        borderRadius: "4px",
-        marginBottom: "12px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-        }}
-      >
-        <div>
-          <div style={{ fontWeight: 600, color: color.text }}>{alert.title}</div>
-          <div style={{ fontSize: "14px", color: color.text, marginTop: "4px" }}>
-            {alert.message}
-          </div>
-        </div>
-        {alert.link && (
-          <Link
-            to={alert.link}
-            style={{
-              color: color.text,
-              fontSize: "14px",
-              fontWeight: 500,
-              textDecoration: "underline",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {alert.linkText}
-          </Link>
-        )}
-      </div>
-    </div>
-  );
-}
+        {/* Value Summary */}
+        <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Pending Trade-In Value</Text>
+              <Text as="p" variant="headingLg" fontWeight="bold">{formatPrice(stats.totalPendingValue)}</Text>
+              <Text as="p" variant="bodySm" tone="subdued">Across active submissions</Text>
+            </BlockStack>
+          </Card>
 
-function StatCard({
-  title,
-  value,
-  color,
-  link,
-}: {
-  title: string;
-  value: number;
-  color: string;
-  link?: string;
-}) {
-  const content = (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: "8px",
-        padding: "20px",
-        border: "1px solid #e5e7eb",
-        borderLeft: `4px solid ${color}`,
-        cursor: link ? "pointer" : "default",
-        transition: "box-shadow 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        if (link) e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "none";
-      }}
-    >
-      <div style={{ color: "#6b7280", fontSize: "14px", marginBottom: "8px" }}>
-        {title}
-      </div>
-      <div style={{ fontSize: "32px", fontWeight: 700, color: "#111827" }}>
-        {value}
-      </div>
-    </div>
-  );
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Total Completed Payouts</Text>
+              <Text as="p" variant="headingLg" fontWeight="bold">{formatPrice(stats.totalCompletedValue)}</Text>
+              <Text as="p" variant="bodySm" tone="subdued">All time</Text>
+            </BlockStack>
+          </Card>
 
-  if (link) {
-    return (
-      <Link to={link} style={{ textDecoration: "none" }}>
-        {content}
-      </Link>
-    );
-  }
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd" tone="subdued">Active Cards in Price List</Text>
+              <Text as="p" variant="headingLg" fontWeight="bold">{stats.totalActiveCards.toLocaleString()}</Text>
+              <Link to="/app/prices">
+                <Text as="span" variant="bodySm" tone="subdued">Manage prices</Text>
+              </Link>
+            </BlockStack>
+          </Card>
+        </InlineGrid>
 
-  return content;
-}
+        {/* Recent Activity */}
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between">
+              <Text as="h2" variant="headingMd">Recent Activity</Text>
+              <Button variant="plain" url="/app/trade-ins">View all</Button>
+            </InlineStack>
 
-function ValueCard({
-  title,
-  value,
-  subtitle,
-  clickable = false,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  clickable?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: "8px",
-        padding: "20px",
-        border: "1px solid #e5e7eb",
-        cursor: clickable ? "pointer" : "default",
-        transition: "box-shadow 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        if (clickable) e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "none";
-      }}
-    >
-      <div style={{ color: "#6b7280", fontSize: "14px", marginBottom: "8px" }}>
-        {title}
-      </div>
-      <div style={{ fontSize: "24px", fontWeight: 700, color: "#111827" }}>
-        {value}
-      </div>
-      <div style={{ color: "#9ca3af", fontSize: "12px", marginTop: "4px" }}>
-        {subtitle}
-      </div>
-    </div>
-  );
-}
+            {recentSubmissions.length === 0 ? (
+              <Box padding="400">
+                <BlockStack gap="200" align="center">
+                  <Text as="p" tone="subdued">No submissions yet</Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Trade-in submissions will appear here once customers start submitting.
+                  </Text>
+                </BlockStack>
+              </Box>
+            ) : (
+              <DataTable
+                columnContentTypes={["text", "text", "text", "text", "numeric", "text"]}
+                headings={["Submission", "Customer", "Status", "Items", "Value", "Date"]}
+                rows={recentActivityRows}
+              />
+            )}
+          </BlockStack>
+        </Card>
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    DRAFT: { bg: "#f3f4f6", text: "#6b7280" },
-    SUBMITTED: { bg: "#dbeafe", text: "#1d4ed8" },
-    IN_TRANSIT: { bg: "#dbeafe", text: "#1d4ed8" },
-    RECEIVED: { bg: "#fef3c7", text: "#b45309" },
-    GRADING: { bg: "#fef3c7", text: "#b45309" },
-    PENDING_APPROVAL: { bg: "#ede9fe", text: "#7c3aed" },
-    APPROVED: { bg: "#d1fae5", text: "#059669" },
-    COMPLETED: { bg: "#d1fae5", text: "#059669" },
-    CANCELLED: { bg: "#fee2e2", text: "#dc2626" },
-    RETURNED: { bg: "#fee2e2", text: "#dc2626" },
-  };
+        {/* Quick Actions */}
+        <Text as="h2" variant="headingMd">Quick Actions</Text>
+        <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h3" variant="headingMd">Price Management</Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Update trade-in prices and add new cards
+              </Text>
+              <Button url="/app/prices">Manage Prices</Button>
+            </BlockStack>
+          </Card>
 
-  const color = colors[status] || colors.DRAFT;
-  const label =
-    SubmissionStatusLabels[status as keyof typeof SubmissionStatusLabels] ||
-    status.replace(/_/g, " ");
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h3" variant="headingMd">Settings</Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Configure multipliers, thresholds, and notifications
+              </Text>
+              <Button url="/app/settings">Open Settings</Button>
+            </BlockStack>
+          </Card>
 
-  return (
-    <span
-      style={{
-        background: color.bg,
-        color: color.text,
-        padding: "2px 8px",
-        borderRadius: "4px",
-        fontSize: "12px",
-        fontWeight: 500,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function QuickActionCard({
-  title,
-  description,
-  link,
-  icon,
-}: {
-  title: string;
-  description: string;
-  link: string;
-  icon: string;
-}) {
-  return (
-    <Link to={link} style={{ textDecoration: "none" }}>
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "8px",
-          padding: "20px",
-          border: "1px solid #e5e7eb",
-          cursor: "pointer",
-          transition: "all 0.15s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.1)";
-          e.currentTarget.style.borderColor = "#d1d5db";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = "none";
-          e.currentTarget.style.borderColor = "#e5e7eb";
-        }}
-      >
-        <div style={{ fontSize: "24px", marginBottom: "12px" }}>{icon}</div>
-        <div style={{ fontWeight: 600, marginBottom: "4px", color: "#111827" }}>
-          {title}
-        </div>
-        <div style={{ fontSize: "14px", color: "#6b7280" }}>{description}</div>
-      </div>
-    </Link>
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h3" variant="headingMd">Payouts</Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Process pending payouts and view history
+              </Text>
+              <Button url="/app/payouts">View Payouts</Button>
+            </BlockStack>
+          </Card>
+        </InlineGrid>
+      </BlockStack>
+    </Page>
   );
 }
 
