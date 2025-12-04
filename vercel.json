@@ -2,7 +2,7 @@
   "buildCommand": "prisma generate && npm run build",
   "installCommand": "npm install",
   "framework": null,
-  "regions": ["syd1"],
+  "regions": ["iad1"],
   "functions": {
     "api/index.js": {
       "includeFiles": "build/**"
