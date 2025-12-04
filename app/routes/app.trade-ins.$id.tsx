@@ -22,17 +22,6 @@ import {
   formatPrice,
   isConditionWorse,
 } from "../lib/constants";
-import {
-  isValidTransition,
-  getValidNextStatuses,
-  attemptTransition,
-  type SubmissionContext,
-} from "../lib/workflow.server";
-import {
-  calculateConditionAdjustment,
-  calculateSubmissionTotal,
-  getConditionMultiplier,
-} from "../lib/pricing.server";
 
 interface ItemData {
   id: string;
@@ -57,6 +46,9 @@ interface ItemData {
 }
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
+  // Server-only imports
+  const { getValidNextStatuses, attemptTransition } = await import("../lib/workflow.server");
+  type SubmissionContext = Parameters<typeof attemptTransition>[0];
   await authenticate.admin(request);
 
   const submission = await prisma.tradeInSubmission.findUnique({
@@ -113,8 +105,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     allItemsGraded: gradedItems.length === submission.items.length,
   };
 
-  // Get valid next statuses
+  // Get valid next statuses and pre-compute transition results for client
   const validNextStatuses = getValidNextStatuses(submission.status as SubmissionStatusType);
+  const transitionResults = validNextStatuses.reduce((acc, status) => {
+    const result = attemptTransition(context, status);
+    acc[status] = { allowed: result.allowed, reason: result.reason };
+    return acc;
+  }, {} as Record<string, { allowed: boolean; reason?: string }>);
 
   return {
     submission: {
@@ -141,7 +138,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     },
     gradingProgress,
     validNextStatuses,
-    context,
+    transitionResults,
     settings: settings
       ? {
           conditionMultiplierNM: settings.conditionMultiplierNM,
@@ -155,6 +152,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
+  // Server-only imports
+  const { attemptTransition } = await import("../lib/workflow.server");
+  type SubmissionContext = Parameters<typeof attemptTransition>[0];
+
   await authenticate.admin(request);
 
   const formData = await request.formData();
@@ -244,7 +245,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       }
 
       let finalPrice = item.quotedPrice;
-      let status = ItemStatus.VERIFIED;
+      let status: string = ItemStatus.VERIFIED;
 
       if (action === "reject") {
         finalPrice = 0;
@@ -375,7 +376,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function TradeInDetail() {
-  const { submission, gradingProgress, validNextStatuses, context, settings } =
+  const { submission, gradingProgress, validNextStatuses, transitionResults, settings } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
@@ -492,9 +493,9 @@ export default function TradeInDetail() {
                 status === SubmissionStatus.CANCELLED ||
                 status === SubmissionStatus.RETURNED;
 
-              // Check if transition is allowed
-              const transitionResult = attemptTransition(context, status);
-              const isDisabled = !transitionResult.allowed;
+              // Check if transition is allowed (pre-computed on server)
+              const transitionResult = transitionResults[status];
+              const isDisabled = !transitionResult?.allowed;
 
               return (
                 <fetcher.Form method="post" key={status}>
