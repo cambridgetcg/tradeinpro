@@ -1,0 +1,363 @@
+{% comment %}
+  Trade-In Form Block
+  Main submission interface for customers to build and submit trade-ins
+{% endcomment %}
+
+<div class="trade-in-form" data-trade-in-form data-api-base="/apps/trade-in">
+  {% comment %} Header {% endcomment %}
+  <div class="trade-in-form__header">
+    <h2 class="trade-in-form__title">{{ block.settings.title | default: 'trade_in.form.title' | t }}</h2>
+    {% if block.settings.subtitle != blank %}
+      <p class="trade-in-form__subtitle">{{ block.settings.subtitle }}</p>
+    {% else %}
+      <p class="trade-in-form__subtitle">{{ 'trade_in.form.subtitle' | t }}</p>
+    {% endif %}
+  </div>
+
+  {% comment %} Main Content Area {% endcomment %}
+  <div class="trade-in-form__content">
+    {% comment %} Left Column: Search & Results {% endcomment %}
+    <div class="trade-in-form__search-section">
+      <div class="trade-in-search" data-card-search>
+        <label for="trade-in-search" class="trade-in-search__label">
+          {{ 'trade_in.search.label' | t }}
+        </label>
+        <div class="trade-in-search__input-wrapper">
+          <svg class="trade-in-search__icon" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+          </svg>
+          <input
+            type="text"
+            id="trade-in-search"
+            class="trade-in-search__input"
+            placeholder="{{ 'trade_in.search.placeholder' | t }}"
+            autocomplete="off"
+            data-search-input
+          >
+          <button type="button" class="trade-in-search__clear" data-search-clear hidden>
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+        <div class="trade-in-search__results" data-search-results hidden></div>
+      </div>
+
+      {% if block.settings.show_condition_guide %}
+        <details class="trade-in-condition-guide">
+          <summary class="trade-in-condition-guide__toggle">
+            <span>Condition Guide</span>
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </summary>
+          <div class="trade-in-condition-guide__content">
+            <div class="trade-in-condition-guide__item">
+              <strong>NM</strong> - {{ 'trade_in.condition.NM_desc' | t }}
+            </div>
+            <div class="trade-in-condition-guide__item">
+              <strong>LP</strong> - {{ 'trade_in.condition.LP_desc' | t }}
+            </div>
+            <div class="trade-in-condition-guide__item">
+              <strong>MP</strong> - {{ 'trade_in.condition.MP_desc' | t }}
+            </div>
+            <div class="trade-in-condition-guide__item">
+              <strong>HP</strong> - {{ 'trade_in.condition.HP_desc' | t }}
+            </div>
+            <div class="trade-in-condition-guide__item">
+              <strong>DMG</strong> - {{ 'trade_in.condition.DMG_desc' | t }}
+            </div>
+          </div>
+        </details>
+      {% endif %}
+    </div>
+
+    {% comment %} Right Column: Cart {% endcomment %}
+    <div class="trade-in-form__cart-section">
+      <div class="trade-in-cart" data-cart>
+        <div class="trade-in-cart__header">
+          <h3 class="trade-in-cart__title">{{ 'trade_in.cart.title' | t }}</h3>
+          <button type="button" class="trade-in-cart__clear" data-cart-clear hidden>
+            {{ 'trade_in.cart.clear_all' | t }}
+          </button>
+        </div>
+
+        <div class="trade-in-cart__empty" data-cart-empty>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+          </svg>
+          <p>{{ 'trade_in.cart.empty' | t }}</p>
+          <span>{{ 'trade_in.cart.empty_hint' | t }}</span>
+        </div>
+
+        <div class="trade-in-cart__items" data-cart-items></div>
+
+        <div class="trade-in-cart__summary" data-cart-summary hidden>
+          <div class="trade-in-cart__summary-row">
+            <span>{{ 'trade_in.summary.items' | t }}</span>
+            <span><span data-item-count>0</span> {{ 'trade_in.summary.cards' | t }}</span>
+          </div>
+          <div class="trade-in-cart__summary-row trade-in-cart__summary-row--total">
+            <span>{{ 'trade_in.summary.subtotal' | t }}</span>
+            <span data-quoted-total>{{ 0 | money }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% comment %} Customer Information (shown after adding items) {% endcomment %}
+  <div class="trade-in-form__section" data-customer-section hidden>
+    <h3 class="trade-in-form__section-title">{{ 'trade_in.customer.title' | t }}</h3>
+
+    {% if customer %}
+      <div class="trade-in-form__customer-info">
+        <p>{{ 'trade_in.customer.logged_in' | t: name: customer.first_name }}</p>
+        <input type="hidden" name="shopifyCustomerId" value="{{ customer.id }}">
+        <input type="hidden" name="email" value="{{ customer.email }}">
+      </div>
+    {% else %}
+      <div class="trade-in-form__fields">
+        <div class="trade-in-form__field trade-in-form__field--full">
+          <label for="customer-email" class="trade-in-form__label">
+            {{ 'trade_in.customer.email' | t }} <span class="required">*</span>
+          </label>
+          <input
+            type="email"
+            id="customer-email"
+            name="email"
+            class="trade-in-form__input"
+            required
+            data-customer-email
+          >
+          <span class="trade-in-form__error" data-email-error hidden>
+            {{ 'trade_in.customer.email_required' | t }}
+          </span>
+        </div>
+        <div class="trade-in-form__field">
+          <label for="customer-first-name" class="trade-in-form__label">
+            {{ 'trade_in.customer.first_name' | t }}
+          </label>
+          <input
+            type="text"
+            id="customer-first-name"
+            name="firstName"
+            class="trade-in-form__input"
+          >
+        </div>
+        <div class="trade-in-form__field">
+          <label for="customer-last-name" class="trade-in-form__label">
+            {{ 'trade_in.customer.last_name' | t }}
+          </label>
+          <input
+            type="text"
+            id="customer-last-name"
+            name="lastName"
+            class="trade-in-form__input"
+          >
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% comment %} Payout Selection {% endcomment %}
+  <div class="trade-in-form__section" data-payout-section hidden>
+    <h3 class="trade-in-form__section-title">{{ 'trade_in.payout.title' | t }}</h3>
+
+    <div class="trade-in-payout-options">
+      <label class="trade-in-payout-option trade-in-payout-option--recommended">
+        <input type="radio" name="payoutType" value="STORE_CREDIT" checked>
+        <span class="trade-in-payout-option__radio"></span>
+        <span class="trade-in-payout-option__content">
+          <span class="trade-in-payout-option__header">
+            <span class="trade-in-payout-option__name">{{ 'trade_in.payout.store_credit' | t }}</span>
+            <span class="trade-in-payout-option__badge">{{ 'trade_in.payout.recommended' | t }}</span>
+          </span>
+          <span class="trade-in-payout-option__desc">{{ 'trade_in.payout.store_credit_desc' | t }}</span>
+          <span class="trade-in-payout-option__bonus">{{ 'trade_in.payout.bonus' | t: percent: 10 }}</span>
+          <span class="trade-in-payout-option__total" data-store-credit-total></span>
+        </span>
+      </label>
+
+      <label class="trade-in-payout-option">
+        <input type="radio" name="payoutType" value="BANK">
+        <span class="trade-in-payout-option__radio"></span>
+        <span class="trade-in-payout-option__content">
+          <span class="trade-in-payout-option__header">
+            <span class="trade-in-payout-option__name">{{ 'trade_in.payout.bank_transfer' | t }}</span>
+          </span>
+          <span class="trade-in-payout-option__desc">{{ 'trade_in.payout.bank_transfer_desc' | t }}</span>
+          <span class="trade-in-payout-option__total" data-bank-total></span>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  {% comment %} Submit Section {% endcomment %}
+  <div class="trade-in-form__section trade-in-form__submit-section" data-submit-section hidden>
+    {% if block.settings.show_minimum_notice %}
+      <p class="trade-in-form__minimum" data-minimum-notice hidden>
+        {{ 'trade_in.minimum.not_met' | t: remaining: '0.00' }}
+      </p>
+    {% endif %}
+
+    <button
+      type="submit"
+      class="trade-in-form__submit-btn"
+      data-submit-button
+      disabled
+    >
+      {{ 'trade_in.form.submit' | t }}
+    </button>
+
+    <p class="trade-in-form__terms">
+      {{ 'trade_in.form.terms' | t }}
+      <a href="{{ pages['trade-in-terms'].url | default: '/pages/trade-in-terms' }}">
+        {{ 'trade_in.form.terms_link' | t }}
+      </a>
+    </p>
+  </div>
+
+  {% comment %} Loading State {% endcomment %}
+  <div class="trade-in-form__loading" data-loading-state hidden>
+    <div class="trade-in-spinner"></div>
+    <p>{{ 'trade_in.form.processing' | t }}</p>
+  </div>
+
+  {% comment %} Success State {% endcomment %}
+  <div class="trade-in-form__success" data-success-state hidden>
+    <div class="trade-in-success">
+      <div class="trade-in-success__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </div>
+      <h3 class="trade-in-success__title">{{ 'trade_in.success.title' | t }}</h3>
+      <p class="trade-in-success__message">{{ 'trade_in.success.message' | t }}</p>
+
+      <div class="trade-in-success__details">
+        <span class="trade-in-success__label">{{ 'trade_in.success.number' | t }}</span>
+        <span class="trade-in-success__number" data-submission-number></span>
+      </div>
+
+      <div class="trade-in-success__actions">
+        <a href="#" class="trade-in-success__btn trade-in-success__btn--primary" data-tracking-link>
+          {{ 'trade_in.success.track' | t }}
+        </a>
+        <a href="#" class="trade-in-success__btn" data-label-link hidden>
+          {{ 'trade_in.success.print_label' | t }}
+        </a>
+        <button type="button" class="trade-in-success__btn trade-in-success__btn--secondary" data-new-submission>
+          {{ 'trade_in.success.new_submission' | t }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {% comment %} Error State {% endcomment %}
+  <div class="trade-in-form__error-banner" data-error-banner hidden>
+    <svg viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+    </svg>
+    <span data-error-message>{{ 'trade_in.error.generic' | t }}</span>
+    <button type="button" data-error-dismiss>
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+{% comment %} Condition Selection Modal {% endcomment %}
+<div class="trade-in-modal" data-condition-modal hidden>
+  <div class="trade-in-modal__backdrop" data-modal-backdrop></div>
+  <div class="trade-in-modal__container">
+    <div class="trade-in-modal__content">
+      <button type="button" class="trade-in-modal__close" data-modal-close>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+
+      <div class="trade-in-modal__card-info">
+        <h3 class="trade-in-modal__card-name" data-modal-card-name></h3>
+        <p class="trade-in-modal__card-set" data-modal-card-set></p>
+      </div>
+
+      <div class="trade-in-modal__conditions">
+        <p class="trade-in-modal__label">{{ 'trade_in.condition.title' | t }}</p>
+        <div class="trade-in-conditions" data-condition-options></div>
+      </div>
+
+      <div class="trade-in-modal__quantity">
+        <label class="trade-in-modal__label">{{ 'trade_in.quantity.label' | t }}</label>
+        <div class="trade-in-quantity">
+          <button type="button" class="trade-in-quantity__btn" data-quantity-decrease>
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+          <input type="number" value="1" min="1" max="99" class="trade-in-quantity__input" data-quantity-input>
+          <button type="button" class="trade-in-quantity__btn" data-quantity-increase>
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="trade-in-modal__price">
+        <span class="trade-in-modal__price-label">Price:</span>
+        <span class="trade-in-modal__price-value" data-modal-price></span>
+      </div>
+
+      <button type="button" class="trade-in-modal__add-btn" data-modal-add>
+        {{ 'trade_in.modal.add' | t }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ 'trade-in.js' | asset_url }}" defer></script>
+<link rel="stylesheet" href="{{ 'trade-in.css' | asset_url }}">
+
+{% schema %}
+{
+  "name": "Trade-In Form",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Trade In Your Cards"
+    },
+    {
+      "type": "richtext",
+      "id": "subtitle",
+      "label": "Subtitle"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_condition_guide",
+      "label": "Show condition guide",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_minimum_notice",
+      "label": "Show minimum value notice",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "minimum_value",
+      "label": "Minimum Value (GBP)",
+      "min": 0,
+      "max": 50,
+      "step": 5,
+      "default": 5
+    }
+  ]
+}
+{% endschema %}

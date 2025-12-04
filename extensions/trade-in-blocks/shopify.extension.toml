@@ -1,0 +1,43 @@
+api_version = "2024-10"
+
+[[extensions]]
+name = "Trade-In System"
+handle = "trade-in-blocks"
+type = "theme"
+
+  [[extensions.blocks]]
+  name = "Trade-In Form"
+  template = "blocks/trade-in-form.liquid"
+
+  [[extensions.blocks]]
+  name = "Submission Tracker"
+  template = "blocks/trade-in-tracker.liquid"
+
+  [[extensions.blocks]]
+  name = "Trade-In CTA"
+  template = "blocks/trade-in-cta.liquid"
+
+[settings]
+  [[settings.fields]]
+  key = "primary_color"
+  type = "color"
+  name = "Primary Color"
+  default = "#000000"
+
+  [[settings.fields]]
+  key = "accent_color"
+  type = "color"
+  name = "Accent Color"
+  default = "#10B981"
+
+  [[settings.fields]]
+  key = "show_condition_guide"
+  type = "checkbox"
+  name = "Show Condition Guide"
+  default = true
+
+  [[settings.fields]]
+  key = "show_minimum_notice"
+  type = "checkbox"
+  name = "Show Minimum Value Notice"
+  default = true

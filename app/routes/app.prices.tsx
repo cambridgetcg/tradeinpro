@@ -323,6 +323,19 @@ export default function Prices() {
     { label: "Recently Updated", value: "updated" },
   ];
 
+  // Generate SKU from card data: SETCODE-CARDNUM-VARIANT or fallback
+  const generateSku = (price: typeof prices[0]) => {
+    const parts: string[] = [];
+    if (price.setCode) parts.push(price.setCode.toUpperCase());
+    if (price.cardNumber) parts.push(price.cardNumber);
+    if (price.variant) parts.push(price.variant.substring(0, 3).toUpperCase());
+    if (parts.length > 0) return parts.join("-");
+    // Fallback: use first 3 chars of set name + truncated card name hash
+    const setPrefix = price.setName.substring(0, 3).toUpperCase();
+    const nameHash = price.cardName.substring(0, 6).toUpperCase().replace(/\s/g, "");
+    return `${setPrefix}-${nameHash}`;
+  };
+
   const rowMarkup = prices.map((price, index) => (
     <IndexTable.Row
       id={price.id}
@@ -330,6 +343,11 @@ export default function Prices() {
       selected={selectedIds.includes(price.id)}
       position={index}
     >
+      <IndexTable.Cell>
+        <Text variant="bodyMd" fontWeight="semibold" as="span" tone="subdued">
+          {generateSku(price)}
+        </Text>
+      </IndexTable.Cell>
       <IndexTable.Cell>
         <Text variant="bodyMd" fontWeight="bold" as="span">
           {price.cardName}
@@ -552,6 +570,7 @@ export default function Prices() {
                   }
                 }}
                 headings={[
+                  { title: "SKU" },
                   { title: "Card Name" },
                   { title: "Set" },
                   { title: "Details" },

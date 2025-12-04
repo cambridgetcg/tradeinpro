@@ -1,0 +1,202 @@
+{% comment %}
+  Submission Tracker Block
+  Allows customers to look up submission status by number
+{% endcomment %}
+
+<div class="trade-in-tracker" data-submission-tracker data-api-base="/apps/trade-in">
+  <h2 class="trade-in-tracker__title">{{ block.settings.title | default: 'trade_in.tracker.title' | t }}</h2>
+  <p class="trade-in-tracker__subtitle">{{ 'trade_in.tracker.subtitle' | t }}</p>
+
+  <div class="trade-in-tracker__search">
+    <label for="submission-number" class="visually-hidden">
+      {{ 'trade_in.tracker.label' | t }}
+    </label>
+    <input
+      type="text"
+      id="submission-number"
+      class="trade-in-tracker__input"
+      placeholder="{{ 'trade_in.tracker.placeholder' | t }}"
+      data-tracker-input
+    >
+    <button type="button" class="trade-in-tracker__button" data-tracker-search>
+      {{ 'trade_in.tracker.search' | t }}
+    </button>
+  </div>
+
+  <div class="trade-in-tracker__result" data-tracker-result hidden>
+    <div class="trade-in-tracker__header">
+      <span class="trade-in-tracker__number" data-result-number></span>
+      <span class="trade-in-tracker__status" data-result-status></span>
+    </div>
+
+    <div class="trade-in-timeline" data-result-timeline></div>
+
+    <div class="trade-in-tracker__action" data-result-action hidden>
+      <p data-action-message></p>
+      {% if customer %}
+        <a href="#" class="trade-in-success__btn trade-in-success__btn--primary" data-action-url>
+          {{ 'trade_in.tracker.view_details' | t }}
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="trade-in-tracker__error" data-tracker-error hidden>
+    <p>{{ 'trade_in.tracker.not_found' | t }}</p>
+    <p><a href="{{ shop.email | prepend: 'mailto:' }}">{{ 'trade_in.tracker.need_help' | t }}</a></p>
+  </div>
+
+  <div class="trade-in-tracker__loading" data-tracker-loading hidden>
+    <div class="trade-in-spinner"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const tracker = document.querySelector('[data-submission-tracker]');
+  if (!tracker) return;
+
+  const apiBase = tracker.dataset.apiBase || '/apps/trade-in';
+  const input = tracker.querySelector('[data-tracker-input]');
+  const searchBtn = tracker.querySelector('[data-tracker-search]');
+  const result = tracker.querySelector('[data-tracker-result]');
+  const error = tracker.querySelector('[data-tracker-error]');
+  const loading = tracker.querySelector('[data-tracker-loading]');
+
+  const statusLabels = {
+    'DRAFT': 'Draft',
+    'SUBMITTED': 'Submitted',
+    'IN_TRANSIT': 'In Transit',
+    'RECEIVED': 'Received',
+    'GRADING': 'Grading',
+    'PENDING_APPROVAL': 'Review Required',
+    'APPROVED': 'Approved',
+    'COMPLETED': 'Completed',
+    'CANCELLED': 'Cancelled',
+    'RETURNED': 'Returned'
+  };
+
+  async function lookupSubmission(number) {
+    if (!number) return;
+
+    loading.hidden = false;
+    result.hidden = true;
+    error.hidden = true;
+
+    try {
+      const response = await fetch(`${apiBase}/submissions/${encodeURIComponent(number)}?number=${encodeURIComponent(number)}`);
+      const data = await response.json();
+
+      loading.hidden = true;
+
+      if (data.error || !data.submissionNumber) {
+        error.hidden = false;
+        return;
+      }
+
+      // Populate result
+      const numberEl = tracker.querySelector('[data-result-number]');
+      const statusEl = tracker.querySelector('[data-result-status]');
+      const timelineEl = tracker.querySelector('[data-result-timeline]');
+
+      if (numberEl) {
+        numberEl.textContent = data.submissionNumber;
+      }
+
+      if (statusEl) {
+        statusEl.textContent = data.statusLabel || statusLabels[data.status] || data.status;
+        statusEl.className = 'trade-in-tracker__status trade-in-tracker__status--' + data.status.toLowerCase().replace('_', '-');
+      }
+
+      // Build timeline
+      if (timelineEl && data.timeline) {
+        timelineEl.innerHTML = data.timeline.map(function(event) {
+          const classes = ['trade-in-timeline__item'];
+          if (event.isComplete) classes.push('trade-in-timeline__item--complete');
+          if (event.isCurrent) classes.push('trade-in-timeline__item--current');
+
+          return '<div class="' + classes.join(' ') + '">' +
+            '<div class="trade-in-timeline__marker"></div>' +
+            '<div class="trade-in-timeline__content">' +
+              '<span class="trade-in-timeline__label">' + escapeHtml(event.label) + '</span>' +
+              (event.timestamp ? '<span class="trade-in-timeline__time">' + formatDate(event.timestamp) + '</span>' : '') +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      result.hidden = false;
+    } catch (err) {
+      console.error('Tracker error:', err);
+      loading.hidden = true;
+      error.hidden = false;
+    }
+  }
+
+  function formatDate(dateStr) {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function handleSearch() {
+    var number = input.value.trim().toUpperCase();
+    if (number) {
+      lookupSubmission(number);
+    }
+  }
+
+  if (searchBtn) {
+    searchBtn.addEventListener('click', handleSearch);
+  }
+
+  if (input) {
+    input.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        handleSearch();
+      }
+    });
+
+    // Check for number in URL
+    var urlParams = new URLSearchParams(window.location.search);
+    var numberParam = urlParams.get('number');
+    if (numberParam) {
+      input.value = numberParam;
+      lookupSubmission(numberParam.toUpperCase());
+    }
+  }
+})();
+</script>
+
+<link rel="stylesheet" href="{{ 'trade-in.css' | asset_url }}">
+
+{% schema %}
+{
+  "name": "Submission Tracker",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Track Your Trade-In"
+    }
+  ]
+}
+{% endschema %}

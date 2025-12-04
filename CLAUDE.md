@@ -21,6 +21,11 @@ Shopify custom app for trading card trade-ins. Built with React Router v7, Polar
 - `app/lib/payouts.server.ts` - Payout processing (createPayout, processGiftCardPayout, processBankPayout)
 - `app/lib/submissions.server.ts` - Customer submission management (createSubmission, validateSubmission, searchCards)
 - `app/lib/shipping.server.ts` - Shipping labels and instructions (generateShippingLabel, getSelfShipInstructions)
+- `app/lib/app-proxy.server.ts` - Shopify App Proxy signature validation (validateAppProxy, requireCustomer)
+- `app/lib/notifications.server.ts` - Email notifications (buildSubmissionCreatedEmail, sendEmail)
+- `app/lib/bulk-operations.server.ts` - Bulk actions (bulkMarkReceived, bulkStartGrading, bulkApproveSubmissions, bulkCancelSubmissions)
+- `app/lib/email-provider.server.ts` - Multi-provider email system (Resend, SendGrid, Console), template rendering
+- `app/lib/rate-limit.server.ts` - Rate limiting middleware (RateLimiter, MemoryStore, presets)
 
 ### Routes
 - `app/routes/app._index.tsx` - Dashboard with stats, alerts, recent activity
@@ -29,6 +34,26 @@ Shopify custom app for trading card trade-ins. Built with React Router v7, Polar
 - `app/routes/app.settings.tsx` - App settings configuration
 - `app/routes/app.prices.tsx` - Price database browsing and search
 - `app/routes/app.payouts.tsx` - Payout queue and processing
+- `app/routes/webhooks.tsx` - Shopify webhooks (GDPR compliance, customer sync)
+- `app/routes/api.cards.search.tsx` - Card catalog search API
+- `app/routes/api.submissions.tsx` - Submissions list/create API
+- `app/routes/api.submissions.$id.tsx` - Submission details/submit API
+- `app/routes/api.submissions.$id.confirm.tsx` - Confirm grading API
+- `app/routes/api.submissions.$id.reject.tsx` - Reject/return API
+- `app/routes/api.submissions.$id.items.tsx` - Add/remove items API
+- `app/routes/api.shipping.label.$id.tsx` - Shipping label HTML
+- `app/routes/api.shipping.instructions.$id.tsx` - Self-ship instructions
+- `app/routes/api.shipping.tracking.$id.tsx` - Update tracking API
+- `app/routes/app.reports.tsx` - Admin reports with stats, charts, breakdowns
+- `app/routes/app.reports.export.tsx` - Data export (CSV/JSON) with field selection
+
+### Theme App Extension
+- `extensions/trade-in-blocks/` - Theme app extension for storefront
+- `extensions/trade-in-blocks/blocks/trade-in-form.liquid` - Main submission form
+- `extensions/trade-in-blocks/blocks/trade-in-tracker.liquid` - Submission status tracker
+- `extensions/trade-in-blocks/blocks/trade-in-cta.liquid` - Call-to-action block
+- `extensions/trade-in-blocks/assets/trade-in.js` - Client-side cart/search logic
+- `extensions/trade-in-blocks/assets/trade-in.css` - Scoped component styles
 
 ### Database
 - `prisma/schema.prisma` - Full schema with TradeInSubmission, TradeInItem, Customer, Payout, AppSettings, etc.
@@ -111,11 +136,36 @@ npx prisma studio         # Visual DB browser
 
 See `PHASE3_PLAN.md` for detailed design documentation.
 
+### Phase 4 (COMPLETE)
+- [x] App Proxy Authentication - HMAC-SHA256 signature validation, timing-safe comparison
+- [x] Customer-Facing API Routes - Card search, submissions CRUD, shipping endpoints
+- [x] Input Validation Helpers - sanitizeString, parsePositiveInt, isValidEmail
+- [x] Email Notifications - HTML/text templates for all submission lifecycle events
+- [x] Shopify Webhooks - customers/update, customers/delete, app/uninstalled
+- [x] GDPR Compliance - customers/redact, shop/redact, customers/data_request handlers
+- [x] Customer Data Anonymization - Preserves submission history while removing PII
+- [x] 460 unit tests passing (app-proxy: 39, notifications: 50, webhooks: 20, + Phase 1-3 tests)
+
+See `PHASE4_PLAN.md` for detailed design documentation.
+
+### Phase 5 (COMPLETE)
+- [x] Bulk Operations Library - bulkMarkReceived, bulkStartGrading, bulkApproveSubmissions, bulkCancelSubmissions, bulkRequestReturns, bulkAddNotes
+- [x] Email Provider Integration - Multi-provider support (Resend, SendGrid, Console fallback), template system, HTML/text formatting
+- [x] Rate Limiting - Memory-based store, configurable presets (api, strict, search, submission, auth, export), middleware helpers
+- [x] Admin Reports Route - Summary stats, status breakdown, payout breakdown, top cards, daily stats with date range filtering
+- [x] Export Functionality - CSV/JSON export for submissions, items, customers, payouts with field selection
+- [x] Theme App Extension - Trade-in form, submission tracker, CTA blocks with full CSS styling
+- [x] 564 unit tests passing (rate-limit: 47, bulk-ops: 31, email-provider: 26, + Phase 1-4 tests)
+
+See `PHASE5_PLAN.md` for detailed design documentation.
+
 ## Environment Variables
 See `.env` for required variables:
 - `DATABASE_URL` - PostgreSQL connection string
 - `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET` - App credentials
 - `SCOPES` - Required Shopify API scopes
+- `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_EMAIL` - For shipping labels and notifications
+- `SENDGRID_API_KEY` or `POSTMARK_API_KEY` - Email service (optional, logs to console if not set)
 
 ## Architecture Notes
 

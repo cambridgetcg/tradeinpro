@@ -21,7 +21,7 @@ import {
   getSubmissionStatus,
   getSubmissionSettings,
 } from "../submissions.server";
-import { Condition, PayoutType } from "../constants";
+import { Condition, PayoutType, type ConditionType } from "../constants";
 
 // Mock Prisma
 vi.mock("../../db.server", () => ({
@@ -337,7 +337,7 @@ describe("getConditionPrice", () => {
   });
 
   it("should default to NM price for unknown condition", () => {
-    const price = getConditionPrice(mockCardPrice, "UNKNOWN" as Condition);
+    const price = getConditionPrice(mockCardPrice, "UNKNOWN" as ConditionType);
     expect(price).toBe(5000);
   });
 });

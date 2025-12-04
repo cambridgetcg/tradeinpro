@@ -1,0 +1,130 @@
+{
+  "trade_in": {
+    "form": {
+      "title": "Trade In Your Cards",
+      "subtitle": "Get cash or store credit for your trading cards",
+      "submit": "Submit Trade-In",
+      "processing": "Submitting your trade-in...",
+      "terms": "By submitting, you agree to our",
+      "terms_link": "Terms & Conditions",
+      "minimum_required": "Minimum £{{ minimum }} required"
+    },
+    "search": {
+      "label": "Search for a card",
+      "placeholder": "Search by card name or set...",
+      "no_results": "No cards found",
+      "min_chars": "Type at least 2 characters"
+    },
+    "cart": {
+      "title": "Your Trade-In",
+      "empty": "Search and add cards to get started",
+      "empty_hint": "Use the search above to find cards",
+      "remove": "Remove",
+      "clear_all": "Clear All"
+    },
+    "condition": {
+      "title": "Select Condition",
+      "NM": "Near Mint",
+      "NM_desc": "Perfect or near-perfect condition",
+      "LP": "Lightly Played",
+      "LP_desc": "Minor wear, barely noticeable",
+      "MP": "Moderately Played",
+      "MP_desc": "Noticeable wear but still good",
+      "HP": "Heavily Played",
+      "HP_desc": "Significant wear visible",
+      "DMG": "Damaged",
+      "DMG_desc": "Major damage (creases, tears)"
+    },
+    "customer": {
+      "title": "Your Information",
+      "logged_in": "Trading as {{ name }}",
+      "email": "Email",
+      "email_required": "Email is required",
+      "first_name": "First Name",
+      "last_name": "Last Name"
+    },
+    "payout": {
+      "title": "Choose Your Payout",
+      "store_credit": "Store Credit",
+      "store_credit_desc": "Use towards any purchase",
+      "bank_transfer": "Bank Transfer",
+      "bank_transfer_desc": "Direct to your bank account",
+      "bonus": "+{{ percent }}% bonus",
+      "recommended": "Recommended"
+    },
+    "summary": {
+      "items": "Items",
+      "cards": "cards",
+      "subtotal": "Subtotal",
+      "bonus": "Store Credit Bonus",
+      "total": "Your Payout"
+    },
+    "minimum": {
+      "notice": "Minimum trade-in value is £{{ minimum }}",
+      "not_met": "Add £{{ remaining }} more to submit"
+    },
+    "success": {
+      "title": "Trade-In Submitted!",
+      "message": "We've received your submission and will email you with next steps.",
+      "number": "Submission Number",
+      "track": "Track Your Submission",
+      "print_label": "Print Shipping Label",
+      "new_submission": "Start New Trade-In"
+    },
+    "error": {
+      "generic": "Something went wrong. Please try again.",
+      "network": "Network error. Please check your connection.",
+      "validation": "Please fix the errors below."
+    },
+    "tracker": {
+      "title": "Track Your Trade-In",
+      "subtitle": "Enter your submission number to check status",
+      "label": "Submission Number",
+      "placeholder": "e.g. TRD-202412-00001",
+      "search": "Track",
+      "not_found": "Submission not found. Please check your number and try again.",
+      "view_details": "View Full Details",
+      "need_help": "Need help? Contact us"
+    },
+    "cta": {
+      "title": "Trade In Your Cards",
+      "description": "Turn your trading cards into cash or store credit",
+      "button": "Start Trade-In",
+      "features": {
+        "fast": "Fast Grading",
+        "fast_desc": "1-3 business days",
+        "bonus": "10% Bonus",
+        "bonus_desc": "On store credit",
+        "free_ship": "Free Shipping",
+        "free_ship_desc": "On orders over £50"
+      }
+    },
+    "status": {
+      "DRAFT": "Draft",
+      "SUBMITTED": "Submitted",
+      "IN_TRANSIT": "In Transit",
+      "RECEIVED": "Received",
+      "GRADING": "Grading",
+      "PENDING_APPROVAL": "Review Required",
+      "APPROVED": "Approved",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled",
+      "RETURNED": "Returned"
+    },
+    "timeline": {
+      "submitted": "Submission Received",
+      "in_transit": "Cards in Transit",
+      "received": "Cards Received",
+      "grading": "Grading in Progress",
+      "review": "Review & Approval",
+      "payout": "Payout Issued"
+    },
+    "quantity": {
+      "label": "Quantity"
+    },
+    "modal": {
+      "add": "Add to Trade-In",
+      "close": "Close"
+    }
+  }
+}
