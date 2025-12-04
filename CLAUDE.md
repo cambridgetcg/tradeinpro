@@ -19,6 +19,8 @@ Shopify custom app for trading card trade-ins. Built with React Router v7, Polar
 - `app/lib/settings.server.ts` - Settings CRUD operations (getSettings, updateSettings, resetSettings)
 - `app/lib/prices.server.ts` - Price data management (searchPrices, getPriceById, syncPrices)
 - `app/lib/payouts.server.ts` - Payout processing (createPayout, processGiftCardPayout, processBankPayout)
+- `app/lib/submissions.server.ts` - Customer submission management (createSubmission, validateSubmission, searchCards)
+- `app/lib/shipping.server.ts` - Shipping labels and instructions (generateShippingLabel, getSelfShipInstructions)
 
 ### Routes
 - `app/routes/app._index.tsx` - Dashboard with stats, alerts, recent activity
@@ -97,6 +99,17 @@ npx prisma studio         # Visual DB browser
 - [x] Price Management - Browse, search, sync from external sources
 - [x] Payout Processing - Shopify gift cards, bank transfer tracking
 - [x] 241 unit tests passing (settings: 26, prices: 45, payouts: 38, + Phase 1 tests)
+
+### Phase 3 (COMPLETE)
+- [x] Customer Submissions Library - createSubmission, validateSubmission, submitSubmission, confirmSubmission, rejectSubmission
+- [x] Card Search - searchCards with name/set filters, pagination
+- [x] Customer Management - getOrCreateCustomer with Shopify linking
+- [x] Shipping Library - generateShippingLabel, getSelfShipInstructions, generateLabelHTML, generatePackingSlipHTML
+- [x] Free Shipping Logic - qualifiesForFreeShipping based on submission value
+- [x] Tracking Updates - updateTrackingNumber, markAsReceived
+- [x] 351 unit tests passing (submissions: 56, shipping: 54, + Phase 1-2 tests)
+
+See `PHASE3_PLAN.md` for detailed design documentation.
 
 ## Environment Variables
 See `.env` for required variables:
