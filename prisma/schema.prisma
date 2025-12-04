@@ -104,6 +104,7 @@ model InventoryAltArt {
 // Card prices fed from external source / managed by merchant
 model CardPrice {
   id          String   @id @default(cuid())
+  sku         String?  @unique // External SKU e.g., "optcg-op03-001-en"
   cardName    String
   setName     String
   setCode     String?
@@ -127,6 +128,7 @@ model CardPrice {
   @@index([cardName])
   @@index([setName])
   @@index([setCode])
+  @@index([sku])
 }
 
 // Customer submitting trade-ins (linked to Shopify customer if available)

@@ -333,6 +333,7 @@ export async function syncPricesFromExternal(
         const setCode = external.cardId.split("-")[0] || null;
 
         const priceData = {
+          sku: external.cardId, // Store the external SKU
           cardName: external.name,
           setName,
           setCode,
