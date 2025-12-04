@@ -2,101 +2,54 @@ import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  console.log("[CARDFORUM] ========== DASHBOARD LOADER START ==========");
+  await authenticate.admin(request);
 
-  try {
-    const authResult = await authenticate.admin(request);
-    console.log("[CARDFORUM] Dashboard auth success, shop:", authResult?.session?.shop);
-  } catch (error) {
-    if (error instanceof Response) {
-      console.log("[CARDFORUM] Dashboard auth redirect:", error.status);
-      throw error;
-    }
-    console.error("[CARDFORUM] Dashboard auth failed:", error);
-    throw error;
-  }
-
-  console.log("[CARDFORUM] Fetching dashboard data...");
-
-  // Get dashboard statistics
-  const [
-    pendingSubmissions,
-    gradingSubmissions,
-    approvalSubmissions,
-    completedThisWeek,
-    totalActiveCards,
-    recentSubmissions,
-    submissionStats,
-  ] = await Promise.all([
-    // Count pending submissions
-    db.tradeInSubmission.count({
-      where: { status: { in: ["SUBMITTED", "IN_TRANSIT"] } },
-    }),
-    // Count grading submissions
-    db.tradeInSubmission.count({
-      where: { status: { in: ["RECEIVED", "GRADING"] } },
-    }),
-    // Count awaiting approval
-    db.tradeInSubmission.count({
-      where: { status: "PENDING_APPROVAL" },
-    }),
-    // Completed this week
-    db.tradeInSubmission.count({
-      where: {
-        status: "COMPLETED",
-        completedAt: {
-          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        },
-      },
-    }),
-    // Total active cards in price list
-    db.cardPrice.count({
-      where: { isActive: true },
-    }),
-    // Recent submissions
-    db.tradeInSubmission.findMany({
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      include: {
-        customer: true,
-        items: true,
-      },
-    }),
-    // Weekly stats
-    db.tradeInSubmission.groupBy({
-      by: ["status"],
-      _count: { status: true },
-      _sum: { quotedTotal: true, finalTotal: true },
-    }),
-  ]);
-
-  // Calculate totals
-  const totalPendingValue = submissionStats
-    .filter((s) => !["COMPLETED", "CANCELLED", "RETURNED"].includes(s.status))
-    .reduce((sum, s) => sum + (s._sum.quotedTotal || 0), 0);
-
-  const totalCompletedValue = submissionStats
-    .filter((s) => s.status === "COMPLETED")
-    .reduce((sum, s) => sum + (s._sum.finalTotal || 0), 0);
-
+  // Mock data - no database queries
   return {
     stats: {
-      pendingSubmissions,
-      gradingSubmissions,
-      approvalSubmissions,
-      completedThisWeek,
-      totalActiveCards,
-      totalPendingValue,
-      totalCompletedValue,
+      pendingSubmissions: 3,
+      gradingSubmissions: 5,
+      approvalSubmissions: 2,
+      completedThisWeek: 12,
+      totalActiveCards: 1547,
+      totalPendingValue: 15000,
+      totalCompletedValue: 245000,
     },
-    recentSubmissions,
+    recentSubmissions: [
+      {
+        id: "mock-1",
+        submissionNumber: "TRD-001",
+        status: "GRADING",
+        customer: { firstName: "John", lastName: "Smith" },
+        quotedTotal: 4500,
+        items: [{ id: "1" }, { id: "2" }, { id: "3" }],
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "mock-2",
+        submissionNumber: "TRD-002",
+        status: "PENDING_APPROVAL",
+        customer: { firstName: "Sarah", lastName: "Jones" },
+        quotedTotal: 8900,
+        items: [{ id: "1" }, { id: "2" }],
+        createdAt: new Date(Date.now() - 86400000).toISOString(),
+      },
+      {
+        id: "mock-3",
+        submissionNumber: "TRD-003",
+        status: "COMPLETED",
+        customer: { firstName: "Mike", lastName: "Brown" },
+        quotedTotal: 2100,
+        items: [{ id: "1" }],
+        createdAt: new Date(Date.now() - 172800000).toISOString(),
+      },
+    ],
   };
 };
 
-const statusColors: Record<string, "info" | "success" | "warning" | "critical" | "neutral"> = {
+const statusColors: Record<string, string> = {
   DRAFT: "neutral",
   SUBMITTED: "info",
   IN_TRANSIT: "info",
@@ -124,240 +77,139 @@ export default function Dashboard() {
   };
 
   return (
-    <s-page heading="Trade-In Dashboard">
-      <Link to="/app/trade-ins" slot="primary-action" style={{ textDecoration: "none" }}>
-        <s-button>View All Trade-Ins</s-button>
-      </Link>
+    <div style={{ padding: "20px", fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div style={{ marginBottom: "24px" }}>
+        <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 600 }}>Trade-In Dashboard</h1>
+        <p style={{ margin: "8px 0 0", color: "#6b7280" }}>Manage your card trade-in submissions</p>
+      </div>
 
-      {/* Quick Stats */}
-      <s-section heading="Overview">
-        <s-stack direction="inline" gap="large">
-          <Link to="/app/trade-ins?status=SUBMITTED" style={{ textDecoration: "none", flex: 1 }}>
-            <s-box padding="large" background="subdued" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-text tone="subdued">Pending Arrival</s-text>
-                <s-text variant="headingLg">
-                  <strong>{stats.pendingSubmissions}</strong>
-                </s-text>
-              </s-stack>
-            </s-box>
-          </Link>
-
-          <Link to="/app/trade-ins?status=GRADING" style={{ textDecoration: "none", flex: 1 }}>
-            <s-box padding="large" background="subdued" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-text tone="subdued">Needs Grading</s-text>
-                <s-text variant="headingLg">
-                  <strong>{stats.gradingSubmissions}</strong>
-                </s-text>
-              </s-stack>
-            </s-box>
-          </Link>
-
-          <Link to="/app/trade-ins?status=PENDING_APPROVAL" style={{ textDecoration: "none", flex: 1 }}>
-            <s-box padding="large" background="subdued" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-text tone="subdued">Awaiting Approval</s-text>
-                <s-text variant="headingLg">
-                  <strong>{stats.approvalSubmissions}</strong>
-                </s-text>
-              </s-stack>
-            </s-box>
-          </Link>
-
-          <s-box padding="large" background="subdued" borderRadius="base" style={{ flex: 1 }}>
-            <s-stack direction="block" gap="tight">
-              <s-text tone="subdued">Completed This Week</s-text>
-              <s-text variant="headingLg">
-                <strong>{stats.completedThisWeek}</strong>
-              </s-text>
-            </s-stack>
-          </s-box>
-        </s-stack>
-      </s-section>
+      {/* Stats Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "32px" }}>
+        <StatCard title="Pending Arrival" value={stats.pendingSubmissions} color="#3b82f6" />
+        <StatCard title="Needs Grading" value={stats.gradingSubmissions} color="#f59e0b" />
+        <StatCard title="Awaiting Approval" value={stats.approvalSubmissions} color="#8b5cf6" />
+        <StatCard title="Completed This Week" value={stats.completedThisWeek} color="#10b981" />
+      </div>
 
       {/* Value Summary */}
-      <s-section heading="Value Summary">
-        <s-stack direction="inline" gap="large">
-          <s-box padding="large" borderWidth="base" borderRadius="base" style={{ flex: 1 }}>
-            <s-stack direction="block" gap="tight">
-              <s-text tone="subdued">Pending Trade-In Value</s-text>
-              <s-text variant="headingLg">
-                <strong>{formatPrice(stats.totalPendingValue)}</strong>
-              </s-text>
-              <s-text tone="subdued">Across active submissions</s-text>
-            </s-stack>
-          </s-box>
-
-          <s-box padding="large" borderWidth="base" borderRadius="base" style={{ flex: 1 }}>
-            <s-stack direction="block" gap="tight">
-              <s-text tone="subdued">Total Completed Value</s-text>
-              <s-text variant="headingLg">
-                <strong>{formatPrice(stats.totalCompletedValue)}</strong>
-              </s-text>
-              <s-text tone="subdued">All time payouts</s-text>
-            </s-stack>
-          </s-box>
-
-          <Link to="/app/prices" style={{ textDecoration: "none", flex: 1 }}>
-            <s-box padding="large" borderWidth="base" borderRadius="base">
-              <s-stack direction="block" gap="tight">
-                <s-text tone="subdued">Active Cards in Price List</s-text>
-                <s-text variant="headingLg">
-                  <strong>{stats.totalActiveCards}</strong>
-                </s-text>
-                <s-text tone="subdued">Click to manage</s-text>
-              </s-stack>
-            </s-box>
-          </Link>
-        </s-stack>
-      </s-section>
-
-      {/* Quick Actions */}
-      <s-section heading="Quick Actions">
-        <s-stack direction="inline" gap="base">
-          <Link to="/app/prices?source=api" style={{ textDecoration: "none" }}>
-            <s-button variant="secondary">Search Card Prices</s-button>
-          </Link>
-          <Link to="/app/buylist" style={{ textDecoration: "none" }}>
-            <s-button variant="secondary">Manage Buylist</s-button>
-          </Link>
-          <Link to="/app/inventory" style={{ textDecoration: "none" }}>
-            <s-button variant="secondary">View Inventory</s-button>
-          </Link>
-          <Link to="/app/settings" style={{ textDecoration: "none" }}>
-            <s-button variant="tertiary">Settings</s-button>
-          </Link>
-        </s-stack>
-      </s-section>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" }}>
+        <ValueCard
+          title="Pending Trade-In Value"
+          value={formatPrice(stats.totalPendingValue)}
+          subtitle="Across active submissions"
+        />
+        <ValueCard
+          title="Total Completed Value"
+          value={formatPrice(stats.totalCompletedValue)}
+          subtitle="All time payouts"
+        />
+        <ValueCard
+          title="Active Cards in Price List"
+          value={stats.totalActiveCards.toLocaleString()}
+          subtitle="Click to manage"
+        />
+      </div>
 
       {/* Recent Submissions */}
-      <s-section heading="Recent Submissions">
-        {recentSubmissions.length === 0 ? (
-          <s-box padding="large" background="subdued" borderRadius="base">
-            <s-stack direction="block" gap="base">
-              <s-text>
-                <strong>No trade-in submissions yet</strong>
-              </s-text>
-              <s-paragraph>
-                Trade-in submissions from customers will appear here once they start
-                using your trade-in system.
-              </s-paragraph>
-            </s-stack>
-          </s-box>
-        ) : (
-          <>
-            {recentSubmissions.map((submission) => (
-              <Link
-                key={submission.id}
-                to={`/app/trade-ins/${submission.id}`}
-                style={{ textDecoration: "none", color: "inherit", display: "block" }}
-              >
-                <s-box padding="base" borderBlockEndWidth="base">
-                  <s-stack direction="inline" gap="large">
-                    <s-stack direction="block" gap="tight" style={{ flex: 1 }}>
-                      <s-stack direction="inline" gap="tight">
-                        <s-text>
-                          <strong>#{submission.submissionNumber}</strong>
-                        </s-text>
-                        <s-badge tone={statusColors[submission.status]}>
-                          {submission.status.replace(/_/g, " ")}
-                        </s-badge>
-                      </s-stack>
-                      <s-text tone="subdued">
-                        {submission.customer.firstName} {submission.customer.lastName}
-                      </s-text>
-                    </s-stack>
-                    <s-stack direction="block" gap="tight">
-                      <s-text>
-                        <strong>{formatPrice(submission.quotedTotal)}</strong>
-                      </s-text>
-                      <s-text tone="subdued">
-                        {submission.items.length} items
-                      </s-text>
-                    </s-stack>
-                    <s-text tone="subdued">{formatDate(submission.createdAt)}</s-text>
-                  </s-stack>
-                </s-box>
-              </Link>
-            ))}
-            <s-box paddingBlockStart="base">
-              <Link to="/app/trade-ins" style={{ textDecoration: "none" }}>
-                <s-button variant="tertiary">View All Submissions</s-button>
-              </Link>
-            </s-box>
-          </>
-        )}
-      </s-section>
+      <div style={{ background: "#fff", borderRadius: "8px", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb" }}>
+          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Recent Submissions</h2>
+        </div>
+        <div>
+          {recentSubmissions.map((submission) => (
+            <div
+              key={submission.id}
+              style={{
+                padding: "16px 20px",
+                borderBottom: "1px solid #e5e7eb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <strong>#{submission.submissionNumber}</strong>
+                  <StatusBadge status={submission.status} />
+                </div>
+                <div style={{ color: "#6b7280", fontSize: "14px", marginTop: "4px" }}>
+                  {submission.customer.firstName} {submission.customer.lastName}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 600 }}>{formatPrice(submission.quotedTotal)}</div>
+                <div style={{ color: "#6b7280", fontSize: "14px" }}>
+                  {submission.items.length} items
+                </div>
+              </div>
+              <div style={{ color: "#6b7280", fontSize: "14px" }}>
+                {formatDate(submission.createdAt)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      {/* Sidebar - Getting Started */}
-      <s-section slot="aside" heading="Getting Started">
-        <s-stack direction="block" gap="base">
-          <s-box padding="base" background="subdued" borderRadius="base">
-            <s-stack direction="block" gap="tight">
-              <s-text>
-                <strong>1. Set Up Prices</strong>
-              </s-text>
-              <s-paragraph>
-                Sync card prices from the external API or add them manually.
-              </s-paragraph>
-              <Link to="/app/prices" style={{ textDecoration: "none" }}>
-                <s-button variant="tertiary">Manage Prices</s-button>
-              </Link>
-            </s-stack>
-          </s-box>
+function StatCard({ title, value, color }: { title: string; value: number; color: string }) {
+  return (
+    <div style={{
+      background: "#fff",
+      borderRadius: "8px",
+      padding: "20px",
+      border: "1px solid #e5e7eb",
+      borderLeft: `4px solid ${color}`,
+    }}>
+      <div style={{ color: "#6b7280", fontSize: "14px", marginBottom: "8px" }}>{title}</div>
+      <div style={{ fontSize: "32px", fontWeight: 700, color: "#111827" }}>{value}</div>
+    </div>
+  );
+}
 
-          <s-box padding="base" background="subdued" borderRadius="base">
-            <s-stack direction="block" gap="tight">
-              <s-text>
-                <strong>2. Configure Buylist</strong>
-              </s-text>
-              <s-paragraph>
-                Set which cards you're actively buying and at what rates.
-              </s-paragraph>
-              <Link to="/app/buylist" style={{ textDecoration: "none" }}>
-                <s-button variant="tertiary">Manage Buylist</s-button>
-              </Link>
-            </s-stack>
-          </s-box>
+function ValueCard({ title, value, subtitle }: { title: string; value: string; subtitle: string }) {
+  return (
+    <div style={{
+      background: "#fff",
+      borderRadius: "8px",
+      padding: "20px",
+      border: "1px solid #e5e7eb",
+    }}>
+      <div style={{ color: "#6b7280", fontSize: "14px", marginBottom: "8px" }}>{title}</div>
+      <div style={{ fontSize: "24px", fontWeight: 700, color: "#111827" }}>{value}</div>
+      <div style={{ color: "#9ca3af", fontSize: "12px", marginTop: "4px" }}>{subtitle}</div>
+    </div>
+  );
+}
 
-          <s-box padding="base" background="subdued" borderRadius="base">
-            <s-stack direction="block" gap="tight">
-              <s-text>
-                <strong>3. Adjust Settings</strong>
-              </s-text>
-              <s-paragraph>
-                Set minimum values, bonus rates, and shipping options.
-              </s-paragraph>
-              <Link to="/app/settings" style={{ textDecoration: "none" }}>
-                <s-button variant="tertiary">Settings</s-button>
-              </Link>
-            </s-stack>
-          </s-box>
-        </s-stack>
-      </s-section>
+function StatusBadge({ status }: { status: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    DRAFT: { bg: "#f3f4f6", text: "#6b7280" },
+    SUBMITTED: { bg: "#dbeafe", text: "#1d4ed8" },
+    IN_TRANSIT: { bg: "#dbeafe", text: "#1d4ed8" },
+    RECEIVED: { bg: "#fef3c7", text: "#b45309" },
+    GRADING: { bg: "#fef3c7", text: "#b45309" },
+    PENDING_APPROVAL: { bg: "#ede9fe", text: "#7c3aed" },
+    APPROVED: { bg: "#d1fae5", text: "#059669" },
+    COMPLETED: { bg: "#d1fae5", text: "#059669" },
+    CANCELLED: { bg: "#fee2e2", text: "#dc2626" },
+    RETURNED: { bg: "#fee2e2", text: "#dc2626" },
+  };
 
-      {/* Sidebar - Help */}
-      <s-section slot="aside" heading="Need Help?">
-        <s-unordered-list>
-          <s-list-item>
-            <s-link href="#" target="_blank">
-              Trade-In Grading Guide
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            <s-link href="#" target="_blank">
-              Managing Payouts
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            <s-link href="#" target="_blank">
-              Customer Communication
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
-    </s-page>
+  const color = colors[status] || colors.DRAFT;
+
+  return (
+    <span style={{
+      background: color.bg,
+      color: color.text,
+      padding: "2px 8px",
+      borderRadius: "4px",
+      fontSize: "12px",
+      fontWeight: 500,
+    }}>
+      {status.replace(/_/g, " ")}
+    </span>
   );
 }
 
