@@ -1,246 +1,344 @@
-import { useEffect } from "react";
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
+import { useLoaderData, Link } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import db from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
 
-  return null;
-};
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
+  // Get dashboard statistics
+  const [
+    pendingSubmissions,
+    gradingSubmissions,
+    approvalSubmissions,
+    completedThisWeek,
+    totalActiveCards,
+    recentSubmissions,
+    submissionStats,
+  ] = await Promise.all([
+    // Count pending submissions
+    db.tradeInSubmission.count({
+      where: { status: { in: ["SUBMITTED", "IN_TRANSIT"] } },
+    }),
+    // Count grading submissions
+    db.tradeInSubmission.count({
+      where: { status: { in: ["RECEIVED", "GRADING"] } },
+    }),
+    // Count awaiting approval
+    db.tradeInSubmission.count({
+      where: { status: "PENDING_APPROVAL" },
+    }),
+    // Completed this week
+    db.tradeInSubmission.count({
+      where: {
+        status: "COMPLETED",
+        completedAt: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         },
       },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
+    }),
+    // Total active cards in price list
+    db.cardPrice.count({
+      where: { isActive: true },
+    }),
+    // Recent submissions
+    db.tradeInSubmission.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: true,
+        items: true,
       },
-    },
-  );
+    }),
+    // Weekly stats
+    db.tradeInSubmission.groupBy({
+      by: ["status"],
+      _count: { status: true },
+      _sum: { quotedTotal: true, finalTotal: true },
+    }),
+  ]);
 
-  const variantResponseJson = await variantResponse.json();
+  // Calculate totals
+  const totalPendingValue = submissionStats
+    .filter((s) => !["COMPLETED", "CANCELLED", "RETURNED"].includes(s.status))
+    .reduce((sum, s) => sum + (s._sum.quotedTotal || 0), 0);
+
+  const totalCompletedValue = submissionStats
+    .filter((s) => s.status === "COMPLETED")
+    .reduce((sum, s) => sum + (s._sum.finalTotal || 0), 0);
 
   return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
+    stats: {
+      pendingSubmissions,
+      gradingSubmissions,
+      approvalSubmissions,
+      completedThisWeek,
+      totalActiveCards,
+      totalPendingValue,
+      totalCompletedValue,
+    },
+    recentSubmissions,
   };
 };
 
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+const statusColors: Record<string, "info" | "success" | "warning" | "critical" | "neutral"> = {
+  DRAFT: "neutral",
+  SUBMITTED: "info",
+  IN_TRANSIT: "info",
+  RECEIVED: "warning",
+  GRADING: "warning",
+  PENDING_APPROVAL: "warning",
+  APPROVED: "success",
+  COMPLETED: "success",
+  CANCELLED: "critical",
+  RETURNED: "critical",
+};
 
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+export default function Dashboard() {
+  const { stats, recentSubmissions } = useLoaderData<typeof loader>();
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
+  const formatPrice = (cents: number) => `£${(cents / 100).toFixed(2)}`;
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
+    <s-page heading="Trade-In Dashboard">
+      <Link to="/app/trade-ins" slot="primary-action" style={{ textDecoration: "none" }}>
+        <s-button>View All Trade-Ins</s-button>
+      </Link>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
+      {/* Quick Stats */}
+      <s-section heading="Overview">
+        <s-stack direction="inline" gap="large">
+          <Link to="/app/trade-ins?status=SUBMITTED" style={{ textDecoration: "none", flex: 1 }}>
+            <s-box padding="large" background="subdued" borderRadius="base">
+              <s-stack direction="block" gap="tight">
+                <s-text tone="subdued">Pending Arrival</s-text>
+                <s-text variant="headingLg">
+                  <strong>{stats.pendingSubmissions}</strong>
+                </s-text>
+              </s-stack>
+            </s-box>
+          </Link>
 
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
+          <Link to="/app/trade-ins?status=GRADING" style={{ textDecoration: "none", flex: 1 }}>
+            <s-box padding="large" background="subdued" borderRadius="base">
+              <s-stack direction="block" gap="tight">
+                <s-text tone="subdued">Needs Grading</s-text>
+                <s-text variant="headingLg">
+                  <strong>{stats.gradingSubmissions}</strong>
+                </s-text>
+              </s-stack>
+            </s-box>
+          </Link>
+
+          <Link to="/app/trade-ins?status=PENDING_APPROVAL" style={{ textDecoration: "none", flex: 1 }}>
+            <s-box padding="large" background="subdued" borderRadius="base">
+              <s-stack direction="block" gap="tight">
+                <s-text tone="subdued">Awaiting Approval</s-text>
+                <s-text variant="headingLg">
+                  <strong>{stats.approvalSubmissions}</strong>
+                </s-text>
+              </s-stack>
+            </s-box>
+          </Link>
+
+          <s-box padding="large" background="subdued" borderRadius="base" style={{ flex: 1 }}>
+            <s-stack direction="block" gap="tight">
+              <s-text tone="subdued">Completed This Week</s-text>
+              <s-text variant="headingLg">
+                <strong>{stats.completedThisWeek}</strong>
+              </s-text>
             </s-stack>
-          </s-section>
+          </s-box>
+        </s-stack>
+      </s-section>
+
+      {/* Value Summary */}
+      <s-section heading="Value Summary">
+        <s-stack direction="inline" gap="large">
+          <s-box padding="large" borderWidth="base" borderRadius="base" style={{ flex: 1 }}>
+            <s-stack direction="block" gap="tight">
+              <s-text tone="subdued">Pending Trade-In Value</s-text>
+              <s-text variant="headingLg">
+                <strong>{formatPrice(stats.totalPendingValue)}</strong>
+              </s-text>
+              <s-text tone="subdued">Across active submissions</s-text>
+            </s-stack>
+          </s-box>
+
+          <s-box padding="large" borderWidth="base" borderRadius="base" style={{ flex: 1 }}>
+            <s-stack direction="block" gap="tight">
+              <s-text tone="subdued">Total Completed Value</s-text>
+              <s-text variant="headingLg">
+                <strong>{formatPrice(stats.totalCompletedValue)}</strong>
+              </s-text>
+              <s-text tone="subdued">All time payouts</s-text>
+            </s-stack>
+          </s-box>
+
+          <Link to="/app/prices" style={{ textDecoration: "none", flex: 1 }}>
+            <s-box padding="large" borderWidth="base" borderRadius="base">
+              <s-stack direction="block" gap="tight">
+                <s-text tone="subdued">Active Cards in Price List</s-text>
+                <s-text variant="headingLg">
+                  <strong>{stats.totalActiveCards}</strong>
+                </s-text>
+                <s-text tone="subdued">Click to manage</s-text>
+              </s-stack>
+            </s-box>
+          </Link>
+        </s-stack>
+      </s-section>
+
+      {/* Quick Actions */}
+      <s-section heading="Quick Actions">
+        <s-stack direction="inline" gap="base">
+          <Link to="/app/prices?source=api" style={{ textDecoration: "none" }}>
+            <s-button variant="secondary">Search Card Prices</s-button>
+          </Link>
+          <Link to="/app/buylist" style={{ textDecoration: "none" }}>
+            <s-button variant="secondary">Manage Buylist</s-button>
+          </Link>
+          <Link to="/app/inventory" style={{ textDecoration: "none" }}>
+            <s-button variant="secondary">View Inventory</s-button>
+          </Link>
+          <Link to="/app/settings" style={{ textDecoration: "none" }}>
+            <s-button variant="tertiary">Settings</s-button>
+          </Link>
+        </s-stack>
+      </s-section>
+
+      {/* Recent Submissions */}
+      <s-section heading="Recent Submissions">
+        {recentSubmissions.length === 0 ? (
+          <s-box padding="large" background="subdued" borderRadius="base">
+            <s-stack direction="block" gap="base">
+              <s-text>
+                <strong>No trade-in submissions yet</strong>
+              </s-text>
+              <s-paragraph>
+                Trade-in submissions from customers will appear here once they start
+                using your trade-in system.
+              </s-paragraph>
+            </s-stack>
+          </s-box>
+        ) : (
+          <>
+            {recentSubmissions.map((submission) => (
+              <Link
+                key={submission.id}
+                to={`/app/trade-ins/${submission.id}`}
+                style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <s-box padding="base" borderBlockEndWidth="base">
+                  <s-stack direction="inline" gap="large">
+                    <s-stack direction="block" gap="tight" style={{ flex: 1 }}>
+                      <s-stack direction="inline" gap="tight">
+                        <s-text>
+                          <strong>#{submission.submissionNumber}</strong>
+                        </s-text>
+                        <s-badge tone={statusColors[submission.status]}>
+                          {submission.status.replace(/_/g, " ")}
+                        </s-badge>
+                      </s-stack>
+                      <s-text tone="subdued">
+                        {submission.customer.firstName} {submission.customer.lastName}
+                      </s-text>
+                    </s-stack>
+                    <s-stack direction="block" gap="tight">
+                      <s-text>
+                        <strong>{formatPrice(submission.quotedTotal)}</strong>
+                      </s-text>
+                      <s-text tone="subdued">
+                        {submission.items.length} items
+                      </s-text>
+                    </s-stack>
+                    <s-text tone="subdued">{formatDate(submission.createdAt)}</s-text>
+                  </s-stack>
+                </s-box>
+              </Link>
+            ))}
+            <s-box paddingBlockStart="base">
+              <Link to="/app/trade-ins" style={{ textDecoration: "none" }}>
+                <s-button variant="tertiary">View All Submissions</s-button>
+              </Link>
+            </s-box>
+          </>
         )}
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
+      {/* Sidebar - Getting Started */}
+      <s-section slot="aside" heading="Getting Started">
+        <s-stack direction="block" gap="base">
+          <s-box padding="base" background="subdued" borderRadius="base">
+            <s-stack direction="block" gap="tight">
+              <s-text>
+                <strong>1. Set Up Prices</strong>
+              </s-text>
+              <s-paragraph>
+                Sync card prices from the external API or add them manually.
+              </s-paragraph>
+              <Link to="/app/prices" style={{ textDecoration: "none" }}>
+                <s-button variant="tertiary">Manage Prices</s-button>
+              </Link>
+            </s-stack>
+          </s-box>
+
+          <s-box padding="base" background="subdued" borderRadius="base">
+            <s-stack direction="block" gap="tight">
+              <s-text>
+                <strong>2. Configure Buylist</strong>
+              </s-text>
+              <s-paragraph>
+                Set which cards you're actively buying and at what rates.
+              </s-paragraph>
+              <Link to="/app/buylist" style={{ textDecoration: "none" }}>
+                <s-button variant="tertiary">Manage Buylist</s-button>
+              </Link>
+            </s-stack>
+          </s-box>
+
+          <s-box padding="base" background="subdued" borderRadius="base">
+            <s-stack direction="block" gap="tight">
+              <s-text>
+                <strong>3. Adjust Settings</strong>
+              </s-text>
+              <s-paragraph>
+                Set minimum values, bonus rates, and shipping options.
+              </s-paragraph>
+              <Link to="/app/settings" style={{ textDecoration: "none" }}>
+                <s-button variant="tertiary">Settings</s-button>
+              </Link>
+            </s-stack>
+          </s-box>
+        </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Next steps">
+      {/* Sidebar - Help */}
+      <s-section slot="aside" heading="Need Help?">
         <s-unordered-list>
           <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
+            <s-link href="#" target="_blank">
+              Trade-In Grading Guide
             </s-link>
           </s-list-item>
           <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
+            <s-link href="#" target="_blank">
+              Managing Payouts
+            </s-link>
+          </s-list-item>
+          <s-list-item>
+            <s-link href="#" target="_blank">
+              Customer Communication
             </s-link>
           </s-list-item>
         </s-unordered-list>

@@ -236,21 +236,39 @@ model Payout {
 // App settings per shop
 model TradeInSettings {
   id                    String   @id @default(cuid())
-  shop                  String   @unique
+  shop                  String?  @unique
 
-  storeCreditBonusPct   Int      @default(10) // 10% bonus for store credit
-  minSubmissionValue    Int      @default(2000) // $20 minimum in cents
-  maxItemsPerSubmission Int      @default(100)
+  // Value thresholds (in cents)
+  minimumSubmissionValue Int     @default(500)  // £5 minimum
+  requiresApprovalAbove  Int     @default(5000) // £50+ requires approval
+  autoApproveBelow       Int     @default(2000) // Auto-approve under £20
+  maxItemsPerSubmission  Int     @default(100)
 
-  autoApproveThreshold  Int      @default(500) // Auto-approve if adjustment < $5
-  holdPeriodDays        Int      @default(3)
+  // Payout settings
+  storeCreditBonusPercent Int    @default(10)  // 10% bonus for store credit
+  cashPayoutPercent       Int    @default(100) // 100% = full trade-in value
 
-  freeShippingMinimum   Int      @default(5000) // Free label if > $50
-  returnAddress         String?  // JSON string
+  // Condition multipliers (as decimals, e.g., 0.70 = 70%)
+  conditionMultiplierNM  Float   @default(0.70)
+  conditionMultiplierLP  Float   @default(0.55)
+  conditionMultiplierMP  Float   @default(0.40)
+  conditionMultiplierHP  Float   @default(0.25)
+  conditionMultiplierDMG Float   @default(0.10)
 
-  termsAndConditions    String?
-  gradingGuideUrl       String?
+  // Shipping
+  freeShippingMinimum    Int     @default(5000) // Free label if > £50
+  shippingLabelEnabled   Boolean @default(true)
+  returnAddress          String? // JSON string
 
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  // Notifications
+  notifyOnSubmission     Boolean @default(true)
+  notifyOnReceived       Boolean @default(true)
+  notifyOnGraded         Boolean @default(true)
+
+  // Content
+  termsAndConditions     String?
+  gradingGuideUrl        String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
