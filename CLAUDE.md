@@ -16,14 +16,20 @@ Shopify custom app for trading card trade-ins. Built with React Router v7, Polar
 - `app/lib/constants.ts` - Enums (SubmissionStatus, ItemStatus, Condition, PayoutType), utilities (formatPrice, isConditionWorse)
 - `app/lib/pricing.server.ts` - Price calculation engine (calculateCardPrice, calculateSubmissionTotal, meetsMinimumValue)
 - `app/lib/workflow.server.ts` - Status transition state machine (attemptTransition, getValidNextStatuses)
+- `app/lib/settings.server.ts` - Settings CRUD operations (getSettings, updateSettings, resetSettings)
+- `app/lib/prices.server.ts` - Price data management (searchPrices, getPriceById, syncPrices)
+- `app/lib/payouts.server.ts` - Payout processing (createPayout, processGiftCardPayout, processBankPayout)
 
 ### Routes
 - `app/routes/app._index.tsx` - Dashboard with stats, alerts, recent activity
 - `app/routes/app.trade-ins.tsx` - Queue view with filters, search, pagination
 - `app/routes/app.trade-ins.$id.tsx` - Grading interface with condition adjustment
+- `app/routes/app.settings.tsx` - App settings configuration
+- `app/routes/app.prices.tsx` - Price database browsing and search
+- `app/routes/app.payouts.tsx` - Payout queue and processing
 
 ### Database
-- `prisma/schema.prisma` - Full schema with TradeInSubmission, TradeInItem, Customer, Payout, etc.
+- `prisma/schema.prisma` - Full schema with TradeInSubmission, TradeInItem, Customer, Payout, AppSettings, etc.
 
 ## Pricing Logic
 
@@ -85,13 +91,12 @@ npx prisma studio         # Visual DB browser
 - [x] Dashboard with live stats
 - [x] Trade-in queue with filters
 - [x] Grading interface with bulk actions
-- [x] 128 unit tests passing
 
-### Phase 2 (PLANNED)
-See `PHASE2_PLAN.md` for detailed implementation plan:
-1. Settings Management - Configure multipliers, thresholds, notifications
-2. Price Management - Browse, search, sync from external sources
-3. Payout Processing - Shopify gift cards, bank transfer tracking
+### Phase 2 (COMPLETE)
+- [x] Settings Management - Configure multipliers, thresholds, notifications
+- [x] Price Management - Browse, search, sync from external sources
+- [x] Payout Processing - Shopify gift cards, bank transfer tracking
+- [x] 241 unit tests passing (settings: 26, prices: 45, payouts: 38, + Phase 1 tests)
 
 ## Environment Variables
 See `.env` for required variables:
@@ -99,7 +104,25 @@ See `.env` for required variables:
 - `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET` - App credentials
 - `SCOPES` - Required Shopify API scopes
 
-## Notes
+## Architecture Notes
+
+### Shopify App Setup
+- Uses `@shopify/shopify-app-react-router` (NOT Remix - this is React Router v7)
+- Embedded app with `future.unstable_newEmbeddedAuthStrategy: true`
+- Session storage via `PrismaSessionStorage`
+- Polaris styles loaded via `links` export in `app/routes/app.tsx`
+
+### Important Patterns
+- **Server-only imports**: Use dynamic `await import()` inside loader/action functions for `.server.ts` files
+- **React Router v7**: Return plain objects from loaders, NOT `json()` wrapper (deprecated)
+- **Auth handling**: `authenticate.admin()` may throw Response objects for redirects - catch and return them
+
+### Prices
 - All prices stored in pence (integer) to avoid floating point issues
 - Uses Prisma Decimal for external price data, converted via `toNumber()`
 - Workflow transitions validated via `attemptTransition()` before database updates
+
+### Testing
+- Tests located in `app/lib/__tests__/`
+- Mock Prisma client for database operations
+- Run `npm run test` before committing
