@@ -13,6 +13,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     await authenticate.admin(request);
     console.log("[CARDFORUM] app.tsx loader - Authentication successful");
   } catch (error) {
+    // If authenticate.admin throws a Response (redirect for token exchange), return it
+    if (error instanceof Response) {
+      console.log("[CARDFORUM] app.tsx loader - Auth redirect response, returning it");
+      return error;
+    }
     console.error("[CARDFORUM] app.tsx loader - Authentication failed:", error);
     throw error;
   }
