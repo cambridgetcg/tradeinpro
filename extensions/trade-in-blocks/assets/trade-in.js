@@ -1,6 +1,7 @@
 /**
  * Trade-In Form Client Logic
- * Handles card search, cart management, and form submission
+ * Handles card search, browse, cart management, and form submission
+ * Enhanced with card images and set filtering
  */
 
 (function () {
@@ -16,6 +17,7 @@
     minimumValue: 500, // pence
     maxQuantity: 99,
     storeCreditBonus: 0.1, // 10%
+    defaultImagePlaceholder: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 63 88' fill='%23e5e7eb'%3E%3Crect width='63' height='88' rx='4'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='8'%3ENo Image%3C/text%3E%3C/svg%3E",
   };
 
   const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
@@ -35,11 +37,17 @@
     cart: [],
     searchQuery: "",
     searchResults: [],
+    browseResults: [],
+    availableSets: [],
+    selectedSet: "",
+    currentPage: 1,
+    totalPages: 1,
     isLoading: false,
     isSubmitting: false,
     selectedCard: null,
     selectedCondition: "NM",
     selectedQuantity: 1,
+    viewMode: "search", // "search" or "browse"
   };
 
   // ============================================================================
@@ -59,6 +67,13 @@
       searchInput: form.querySelector("[data-search-input]"),
       searchClear: form.querySelector("[data-search-clear]"),
       searchResults: form.querySelector("[data-search-results]"),
+      // Browse
+      browseSection: form.querySelector("[data-browse-section]"),
+      setFilter: form.querySelector("[data-set-filter]"),
+      browseGrid: form.querySelector("[data-browse-grid]"),
+      browsePagination: form.querySelector("[data-browse-pagination]"),
+      browseLoading: form.querySelector("[data-browse-loading]"),
+      viewToggle: form.querySelector("[data-view-toggle]"),
       // Cart
       cartEmpty: form.querySelector("[data-cart-empty]"),
       cartItems: form.querySelector("[data-cart-items]"),
@@ -88,6 +103,7 @@
       newSubmissionBtn: form.querySelector("[data-new-submission]"),
       // Modal
       modal: document.querySelector("[data-condition-modal]"),
+      modalCardImage: document.querySelector("[data-modal-card-image]"),
       modalCardName: document.querySelector("[data-modal-card-name]"),
       modalCardSet: document.querySelector("[data-modal-card-set]"),
       modalConditions: document.querySelector("[data-condition-options]"),
@@ -106,11 +122,12 @@
   // API Functions
   // ============================================================================
 
-  async function searchCards(query) {
+  async function searchCards(query, setCode = "") {
     const params = new URLSearchParams({
       q: query,
       limit: "20",
     });
+    if (setCode) params.append("set", setCode);
 
     try {
       const response = await fetch(`${elements.apiBase}/cards/search?${params}`);
@@ -119,6 +136,36 @@
       return data.results || [];
     } catch (error) {
       console.error("Card search error:", error);
+      return [];
+    }
+  }
+
+  async function browseCards(page = 1, setCode = "") {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: "24",
+      sort: "price-desc",
+    });
+    if (setCode) params.append("set", setCode);
+
+    try {
+      const response = await fetch(`${elements.apiBase}/cards/browse?${params}`);
+      if (!response.ok) throw new Error("Browse failed");
+      return await response.json();
+    } catch (error) {
+      console.error("Card browse error:", error);
+      return { cards: [], total: 0, totalPages: 0, sets: [] };
+    }
+  }
+
+  async function loadSets() {
+    try {
+      const response = await fetch(`${elements.apiBase}/cards/sets`);
+      if (!response.ok) throw new Error("Failed to load sets");
+      const data = await response.json();
+      return data.sets || [];
+    } catch (error) {
+      console.error("Load sets error:", error);
       return [];
     }
   }
@@ -173,7 +220,7 @@
       state.isLoading = true;
       showSearchLoading();
 
-      const results = await searchCards(query);
+      const results = await searchCards(query, state.selectedSet);
       state.searchResults = results;
 
       renderSearchResults(results);
@@ -209,6 +256,9 @@
       .map(
         (card) => `
       <button type="button" class="trade-in-search__result" data-card='${JSON.stringify(card).replace(/'/g, "&#39;")}'>
+        <div class="trade-in-search__result-image">
+          <img src="${card.imageUrl || CONFIG.defaultImagePlaceholder}" alt="${escapeHtml(card.cardName)}" loading="lazy" onerror="this.src='${CONFIG.defaultImagePlaceholder}'">
+        </div>
         <div class="trade-in-search__result-info">
           <span class="trade-in-search__result-name">${escapeHtml(card.cardName)}</span>
           <span class="trade-in-search__result-set">${escapeHtml(card.setName)}${card.variant ? ` - ${escapeHtml(card.variant)}` : ""}</span>
@@ -255,6 +305,161 @@
   }
 
   // ============================================================================
+  // Browse Mode
+  // ============================================================================
+
+  async function initBrowse() {
+    if (!elements.browseSection) return;
+
+    // Load available sets
+    state.availableSets = await loadSets();
+    populateSetFilter();
+
+    // Initial browse load
+    await loadBrowsePage(1);
+  }
+
+  function populateSetFilter() {
+    if (!elements.setFilter) return;
+
+    const options = ['<option value="">All Sets</option>'];
+    state.availableSets.forEach((set) => {
+      options.push(`<option value="${set.code}">${escapeHtml(set.name)} (${set.cardCount})</option>`);
+    });
+    elements.setFilter.innerHTML = options.join("");
+  }
+
+  async function loadBrowsePage(page = 1) {
+    if (elements.browseLoading) {
+      elements.browseLoading.hidden = false;
+    }
+    if (elements.browseGrid) {
+      elements.browseGrid.classList.add("trade-in-browse__grid--loading");
+    }
+
+    const data = await browseCards(page, state.selectedSet);
+    state.browseResults = data.cards || [];
+    state.currentPage = page;
+    state.totalPages = data.totalPages || 1;
+
+    renderBrowseGrid();
+    renderBrowsePagination();
+
+    if (elements.browseLoading) {
+      elements.browseLoading.hidden = true;
+    }
+    if (elements.browseGrid) {
+      elements.browseGrid.classList.remove("trade-in-browse__grid--loading");
+    }
+  }
+
+  function renderBrowseGrid() {
+    if (!elements.browseGrid) return;
+
+    if (state.browseResults.length === 0) {
+      elements.browseGrid.innerHTML = `
+        <div class="trade-in-browse__empty">
+          <p>No cards found${state.selectedSet ? ` in ${state.selectedSet}` : ""}</p>
+        </div>
+      `;
+      return;
+    }
+
+    elements.browseGrid.innerHTML = state.browseResults
+      .map(
+        (card) => `
+      <button type="button" class="trade-in-card" data-browse-card='${JSON.stringify(card).replace(/'/g, "&#39;")}'>
+        <div class="trade-in-card__image">
+          <img src="${card.imageUrl || CONFIG.defaultImagePlaceholder}" alt="${escapeHtml(card.name)}" loading="lazy" onerror="this.src='${CONFIG.defaultImagePlaceholder}'">
+        </div>
+        <div class="trade-in-card__info">
+          <span class="trade-in-card__name">${escapeHtml(card.name)}</span>
+          <span class="trade-in-card__set">${escapeHtml(card.setCode || "")}${card.variantType ? ` - ${escapeHtml(card.variantType)}` : ""}</span>
+          <span class="trade-in-card__price">${formatMoney(card.prices.tradein.NM)}</span>
+        </div>
+      </button>
+    `
+      )
+      .join("");
+
+    // Add click handlers
+    elements.browseGrid.querySelectorAll("[data-browse-card]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const card = JSON.parse(btn.dataset.browseCard);
+        // Transform browse card format to search card format
+        openConditionModal({
+          id: card.cardId,
+          cardName: card.name,
+          setName: card.setCode || "Unknown",
+          setCode: card.setCode,
+          variant: card.variantType,
+          rarity: card.rarity,
+          imageUrl: card.imageUrl,
+          prices: card.prices.tradein,
+        });
+      });
+    });
+  }
+
+  function renderBrowsePagination() {
+    if (!elements.browsePagination) return;
+
+    if (state.totalPages <= 1) {
+      elements.browsePagination.hidden = true;
+      return;
+    }
+
+    elements.browsePagination.hidden = false;
+    const pages = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, state.currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(state.totalPages, startPage + maxVisiblePages - 1);
+
+    if (endPage - startPage < maxVisiblePages - 1) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+
+    // Previous button
+    pages.push(`
+      <button type="button" class="trade-in-pagination__btn" data-page="${state.currentPage - 1}" ${state.currentPage === 1 ? "disabled" : ""}>
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+      </button>
+    `);
+
+    // Page numbers
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(`
+        <button type="button" class="trade-in-pagination__btn ${i === state.currentPage ? "trade-in-pagination__btn--active" : ""}" data-page="${i}">${i}</button>
+      `);
+    }
+
+    // Next button
+    pages.push(`
+      <button type="button" class="trade-in-pagination__btn" data-page="${state.currentPage + 1}" ${state.currentPage === state.totalPages ? "disabled" : ""}>
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+      </button>
+    `);
+
+    elements.browsePagination.innerHTML = pages.join("");
+
+    // Add click handlers
+    elements.browsePagination.querySelectorAll("[data-page]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const page = parseInt(btn.dataset.page);
+        if (page >= 1 && page <= state.totalPages && page !== state.currentPage) {
+          loadBrowsePage(page);
+        }
+      });
+    });
+  }
+
+  function handleSetFilterChange(event) {
+    state.selectedSet = event.target.value;
+    state.currentPage = 1;
+    loadBrowsePage(1);
+  }
+
+  // ============================================================================
   // Modal Handling
   // ============================================================================
 
@@ -265,7 +470,15 @@
     state.selectedCondition = "NM";
     state.selectedQuantity = 1;
 
-    // Populate modal
+    // Populate modal with image
+    if (elements.modalCardImage) {
+      elements.modalCardImage.src = card.imageUrl || CONFIG.defaultImagePlaceholder;
+      elements.modalCardImage.alt = card.cardName;
+      elements.modalCardImage.onerror = function() {
+        this.src = CONFIG.defaultImagePlaceholder;
+      };
+    }
+
     if (elements.modalCardName) {
       elements.modalCardName.textContent = card.cardName;
     }
@@ -390,6 +603,7 @@
         setName: card.setName,
         setCode: card.setCode,
         variant: card.variant,
+        imageUrl: card.imageUrl,
         condition,
         quantity,
         pricePerItem: card.prices[condition],
@@ -446,6 +660,9 @@
       .map(
         (item, index) => `
       <div class="trade-in-cart__item">
+        <div class="trade-in-cart__item-image">
+          <img src="${item.imageUrl || CONFIG.defaultImagePlaceholder}" alt="${escapeHtml(item.cardName)}" loading="lazy" onerror="this.src='${CONFIG.defaultImagePlaceholder}'">
+        </div>
         <div class="trade-in-cart__item-info">
           <span class="trade-in-cart__item-name">${escapeHtml(item.cardName)}</span>
           <span class="trade-in-cart__item-meta">
@@ -736,6 +953,11 @@
       }
     });
 
+    // Set filter
+    if (elements.setFilter) {
+      elements.setFilter.addEventListener("change", handleSetFilterChange);
+    }
+
     // Cart clear
     if (elements.cartClear) {
       elements.cartClear.addEventListener("click", clearCart);
@@ -810,6 +1032,9 @@
 
     setupEventHandlers();
     updateCart();
+
+    // Initialize browse mode if section exists
+    initBrowse();
   }
 
   // Run on DOM ready

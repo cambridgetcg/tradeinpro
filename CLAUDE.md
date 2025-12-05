@@ -1,5 +1,26 @@
 # CardForum - Project Context
 
+## Purpose
+
+CardForum is a **trade-in management system** for a trading card business. It enables:
+
+1. **Customers** to submit cards for trade-in via a Shopify storefront
+2. **Staff** to receive, grade, and process submissions
+3. **Automated pricing** from external market data (TCGplayer, CardMarket)
+4. **Payouts** via Shopify gift cards or bank transfer
+
+The app integrates with a separate Lambda service (`trading-card-pricer`) that fetches real-time card prices every 4 hours, ensuring trade-in values reflect current market conditions.
+
+## How to Use This Documentation
+
+This `CLAUDE.md` file serves as context for Claude Code. When working on this codebase:
+
+1. **Read this file first** to understand the architecture and conventions
+2. **Check the Key Files section** to find relevant code for your task
+3. **Follow the patterns** in Pricing Logic and Workflow States
+4. **Run tests** with `npm run test` before committing changes
+5. **Reference the sister app** `/Users/alex/trading-card-pricer` for price data questions
+
 ## Overview
 Shopify custom app for trading card trade-ins. Built with React Router v7, Polaris, Prisma ORM, and PostgreSQL (AWS RDS).
 
@@ -166,6 +187,78 @@ See `.env` for required variables:
 - `SCOPES` - Required Shopify API scopes
 - `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_EMAIL` - For shipping labels and notifications
 - `SENDGRID_API_KEY` or `POSTMARK_API_KEY` - Email service (optional, logs to console if not set)
+
+## External Price Data Integration
+
+### Sister Application: Trading Card Pricer
+
+Located at `/Users/alex/trading-card-pricer`, this Lambda fetches card prices every 4 hours and writes to `card_prices_v2`.
+
+**Data flow:**
+```
+trading-card-pricer (Lambda) → card_prices_v2 table → CardForum (this app)
+                                                       ↓
+                                               syncPricesFromExternal()
+                                                       ↓
+                                               CardPrice table (trade-in prices)
+```
+
+### CardPriceV2 Model (External Data)
+
+Normalized card prices from multiple sources. **Managed by Lambda - do not modify directly.**
+
+**Card ID format:** `{RELEASE_SET}-{CARD_SET_ID}[-{variant}]`
+```
+Examples:
+  OP01-OP01-003              # Base card
+  OP01-OP01-003-parallel     # Parallel variant
+  OP03-OP01-051-wantedposter # SP card released in OP03
+  OP12-ST18-004-sp           # Starter deck SP in OP12
+```
+
+**Key fields:**
+| Field | Description |
+|-------|-------------|
+| `cardId` | Primary key (format above) |
+| `name` | Card name |
+| `setCode`, `cardNumber`, `variantType` | Parsed components |
+| `optcgTcgplayerGbp` | OPTCG API price (TCGplayer) |
+| `limitlessCardmarketGbp` | Limitless price (CardMarket) |
+| `justtcgTcgplayerGbp` | JustTCG price |
+| `bestPriceGbp` | Lowest of all sources |
+| `tradeinPriceGbp` | bestPriceGbp × 0.70 |
+| `imageUrl` | Relative path to card image |
+
+### Card Images
+
+Images stored in `/Users/alex/Desktop/TCG/OnePiece/Official Sample-EN/`
+
+**Image URL format:**
+- Base cards: `{SET}/{CARD_ID}.png` (e.g., `OP01/OP01-003.png`)
+- SP cards: `{SET}/{SET}-SP-{CARD_ID}.png` (e.g., `OP03/OP03-SP-OP01-051.png`)
+
+**Usage in code:**
+```typescript
+// Query cards with images
+const cardsWithImages = await prisma.cardPriceV2.findMany({
+  where: {
+    game: 'onepiece',
+    imageUrl: { not: null }
+  }
+});
+
+// Build full image URL for production
+const cdnBase = 'https://your-cdn.com/card-images/';
+const fullUrl = `${cdnBase}${card.imageUrl}`;
+```
+
+**Coverage:** ~858 cards have images mapped (OP01-OP13, EB01-EB02 base cards + SP cards)
+
+### Price Sync Process
+
+1. Lambda writes to `card_prices_v2` every 4 hours
+2. Call `syncPricesFromExternal()` in `app/lib/prices.server.ts` to sync to `CardPrice`
+3. Prices converted to pence with condition multipliers applied
 
 ## Architecture Notes
 

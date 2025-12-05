@@ -311,9 +311,9 @@ export default function Prices() {
     },
   ];
 
-  const gameOptions = [
-    { label: "All Games", value: "" },
-    ...games.map((g) => ({ label: g, value: g })),
+  const setOptions = [
+    { label: "All Sets", value: "" },
+    ...games.map((g) => ({ label: g.toUpperCase(), value: g })),
   ];
 
   const sortOptions = [
@@ -331,32 +331,24 @@ export default function Prices() {
       position={index}
     >
       <IndexTable.Cell>
-        <Text variant="bodyMd" fontWeight="semibold" as="span" tone="subdued">
-          {price.sku || "—"}
+        <Text variant="bodyMd" fontWeight="bold" as="span">
+          {price.sku || price.setCode || "—"}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text variant="bodyMd" fontWeight="bold" as="span">
+        <Badge tone="info">{price.setCode?.toUpperCase() || "—"}</Badge>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
+        <Text variant="bodyMd" as="span">
           {price.cardName}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text variant="bodyMd" as="span">
-          {price.setName}
-        </Text>
-        {price.setCode && (
-          <Text variant="bodySm" as="span" tone="subdued">
-            {" "}
-            ({price.setCode})
-          </Text>
-        )}
-      </IndexTable.Cell>
-      <IndexTable.Cell>
         {price.variant && (
-          <Badge tone="info">{price.variant}</Badge>
+          <Badge>{price.variant}</Badge>
         )}
         {price.rarity && (
-          <Badge>{price.rarity}</Badge>
+          <Badge tone="attention">{price.rarity}</Badge>
         )}
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -412,13 +404,13 @@ export default function Prices() {
       }}
       filters={[
         {
-          key: "game",
-          label: "Game",
+          key: "set",
+          label: "Set",
           filter: (
             <Select
               label=""
               labelHidden
-              options={gameOptions}
+              options={setOptions}
               value={gameFilter}
               onChange={handleGameChange}
             />
@@ -557,9 +549,9 @@ export default function Prices() {
                   }
                 }}
                 headings={[
-                  { title: "SKU" },
-                  { title: "Card Name" },
+                  { title: "Card #" },
                   { title: "Set" },
+                  { title: "Name" },
                   { title: "Details" },
                   { title: "Prices" },
                   { title: "Status" },
@@ -616,14 +608,14 @@ export default function Prices() {
 
             <FormLayout>
               <Select
-                label="Game Filter"
+                label="Set Filter"
                 options={[
-                  { label: "All Games", value: "" },
-                  ...externalGames.map((g) => ({ label: g, value: g })),
+                  { label: "All Sets", value: "" },
+                  ...externalGames.map((g) => ({ label: g.toUpperCase(), value: g })),
                 ]}
                 value={syncGame}
                 onChange={setSyncGame}
-                helpText="Filter to sync only specific game prices"
+                helpText="Filter to sync only specific set prices (e.g., OP01, OP03)"
               />
 
               <Checkbox

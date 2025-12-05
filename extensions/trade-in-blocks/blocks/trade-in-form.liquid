@@ -16,11 +16,11 @@
 
   {% comment %} Main Content Area {% endcomment %}
   <div class="trade-in-form__content">
-    {% comment %} Left Column: Search & Results {% endcomment %}
+    {% comment %} Left Column: Search, Browse & Results {% endcomment %}
     <div class="trade-in-form__search-section">
       <div class="trade-in-search" data-card-search>
         <label for="trade-in-search" class="trade-in-search__label">
-          {{ 'trade_in.search.label' | t }}
+          {{ 'trade_in.search.label' | t | default: 'Search for cards' }}
         </label>
         <div class="trade-in-search__input-wrapper">
           <svg class="trade-in-search__icon" viewBox="0 0 20 20" fill="currentColor">
@@ -30,7 +30,7 @@
             type="text"
             id="trade-in-search"
             class="trade-in-search__input"
-            placeholder="{{ 'trade_in.search.placeholder' | t }}"
+            placeholder="{{ 'trade_in.search.placeholder' | t | default: 'Search by card name, set, or number...' }}"
             autocomplete="off"
             data-search-input
           >
@@ -53,22 +53,41 @@
           </summary>
           <div class="trade-in-condition-guide__content">
             <div class="trade-in-condition-guide__item">
-              <strong>NM</strong> - {{ 'trade_in.condition.NM_desc' | t }}
+              <strong>NM</strong> - {{ 'trade_in.condition.NM_desc' | t | default: 'Near Mint - Perfect or near-perfect condition' }}
             </div>
             <div class="trade-in-condition-guide__item">
-              <strong>LP</strong> - {{ 'trade_in.condition.LP_desc' | t }}
+              <strong>LP</strong> - {{ 'trade_in.condition.LP_desc' | t | default: 'Lightly Played - Minor wear, slight edge whitening' }}
             </div>
             <div class="trade-in-condition-guide__item">
-              <strong>MP</strong> - {{ 'trade_in.condition.MP_desc' | t }}
+              <strong>MP</strong> - {{ 'trade_in.condition.MP_desc' | t | default: 'Moderately Played - Noticeable wear, still sleeved playable' }}
             </div>
             <div class="trade-in-condition-guide__item">
-              <strong>HP</strong> - {{ 'trade_in.condition.HP_desc' | t }}
+              <strong>HP</strong> - {{ 'trade_in.condition.HP_desc' | t | default: 'Heavily Played - Significant wear, creases, or damage' }}
             </div>
             <div class="trade-in-condition-guide__item">
-              <strong>DMG</strong> - {{ 'trade_in.condition.DMG_desc' | t }}
+              <strong>DMG</strong> - {{ 'trade_in.condition.DMG_desc' | t | default: 'Damaged - Major damage, tears, or stains' }}
             </div>
           </div>
         </details>
+      {% endif %}
+
+      {% comment %} Browse Section {% endcomment %}
+      {% if block.settings.show_browse_section %}
+        <div class="trade-in-browse" data-browse-section>
+          <div class="trade-in-browse__header">
+            <h3 class="trade-in-browse__title">{{ block.settings.browse_title | default: 'Browse Cards' }}</h3>
+            <div class="trade-in-browse__filters">
+              <select class="trade-in-browse__select" data-set-filter aria-label="Filter by set">
+                <option value="">All Sets</option>
+              </select>
+            </div>
+          </div>
+          <div class="trade-in-browse__loading" data-browse-loading>
+            <div class="trade-in-spinner"></div>
+          </div>
+          <div class="trade-in-browse__grid" data-browse-grid></div>
+          <div class="trade-in-pagination" data-browse-pagination hidden></div>
+        </div>
       {% endif %}
     </div>
 
@@ -279,6 +298,10 @@
         </svg>
       </button>
 
+      <div class="trade-in-modal__card-image">
+        <img src="" alt="" data-modal-card-image>
+      </div>
+
       <div class="trade-in-modal__card-info">
         <h3 class="trade-in-modal__card-name" data-modal-card-name></h3>
         <p class="trade-in-modal__card-set" data-modal-card-set></p>
@@ -342,6 +365,19 @@
       "id": "show_condition_guide",
       "label": "Show condition guide",
       "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_browse_section",
+      "label": "Show card browse section",
+      "default": true,
+      "info": "Display a browsable grid of cards with images"
+    },
+    {
+      "type": "text",
+      "id": "browse_title",
+      "label": "Browse section title",
+      "default": "Browse Cards"
     },
     {
       "type": "checkbox",
