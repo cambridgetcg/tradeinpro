@@ -36,7 +36,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Parse search params
   const search = url.searchParams.get("search") || "";
   const setFilter = url.searchParams.get("set") || "";
-  const sort = (url.searchParams.get("sort") as "name" | "price-asc" | "price-desc" | "updated") || "price-desc";
+  const sort = (url.searchParams.get("sort") as "name" | "card-number" | "price-asc" | "price-desc" | "updated") || "card-number";
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = 20;
 
@@ -73,6 +73,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       orderBy = { lastUpdated: "desc" };
       break;
     case "name":
+      orderBy = { name: "asc" };
+      break;
+    case "card-number":
     default:
       orderBy = [{ setCode: "asc" }, { cardNumber: "asc" }];
       break;
@@ -88,12 +91,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       select: {
         cardId: true,
         name: true,
+        releaseSet: true,
+        fullCardNumber: true,
         setCode: true,
         cardNumber: true,
         variantType: true,
         rarity: true,
         optcgTcgplayerGbp: true,
-        justtcgTcgplayerGbp: true,
         bestPriceGbp: true,
         tradeinPriceGbp: true,
         lastUpdated: true,
@@ -115,13 +119,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Transform prices for display
   const transformedPrices = prices.map((p: typeof prices[number]) => ({
     id: p.cardId,
+    releaseSet: p.releaseSet,
+    fullCardNumber: p.fullCardNumber,
     setCode: p.setCode,
     cardNumber: p.cardNumber,
     name: p.name,
     variantType: p.variantType,
     rarity: p.rarity,
     optcgPrice: p.optcgTcgplayerGbp ? Number(p.optcgTcgplayerGbp) : null,
-    justtcgPrice: p.justtcgTcgplayerGbp ? Number(p.justtcgTcgplayerGbp) : null,
     bestPrice: p.bestPriceGbp ? Number(p.bestPriceGbp) : null,
     tradeinPrice: p.tradeinPriceGbp ? Number(p.tradeinPriceGbp) : null,
     lastUpdated: p.lastUpdated,
@@ -159,13 +164,14 @@ function formatGbp(value: number | null): string {
 // Price type from loader
 interface PriceRow {
   id: string;
+  releaseSet: string | null;
+  fullCardNumber: string | null;
   setCode: string | null;
   cardNumber: string | null;
   name: string;
   variantType: string | null;
   rarity: string | null;
   optcgPrice: number | null;
-  justtcgPrice: number | null;
   bestPrice: number | null;
   tradeinPrice: number | null;
   lastUpdated: Date | null;
@@ -242,7 +248,8 @@ export default function Prices() {
   ];
 
   const sortOptions = [
-    { label: "Set / Card #", value: "name" },
+    { label: "Card Number", value: "card-number" },
+    { label: "Name", value: "name" },
     { label: "Price: Low to High", value: "price-asc" },
     { label: "Price: High to Low", value: "price-desc" },
     { label: "Recently Updated", value: "updated" },
@@ -255,13 +262,13 @@ export default function Prices() {
       position={index}
     >
       <IndexTable.Cell>
-        <Text variant="bodyMd" fontWeight="bold" as="span">
-          {price.setCode?.toUpperCase() || "—"}
+        <Text variant="bodyMd" as="span">
+          {price.releaseSet?.toUpperCase() || "—"}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Text variant="bodyMd" as="span">
-          {price.cardNumber || "—"}
+        <Text variant="bodyMd" fontWeight="bold" as="span">
+          {price.fullCardNumber?.toUpperCase() || "—"}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -284,11 +291,6 @@ export default function Prices() {
       <IndexTable.Cell>
         <Text variant="bodyMd" as="span">
           {formatGbp(price.optcgPrice)}
-        </Text>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Text variant="bodyMd" as="span">
-          {formatGbp(price.justtcgPrice)}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
@@ -416,11 +418,10 @@ export default function Prices() {
                 itemCount={prices.length}
                 selectable={false}
                 headings={[
-                  { title: "Set" },
+                  { title: "Release" },
                   { title: "Card #" },
                   { title: "Name" },
                   { title: "OPTCG Price" },
-                  { title: "JustTCG Price" },
                   { title: "Trade-In" },
                 ]}
                 loading={isLoading}
@@ -448,8 +449,7 @@ export default function Prices() {
 
         <Layout.Section>
           <Banner tone="info">
-            Prices are sourced from external price feeds (OPTCG TCGplayer, JustTCG TCGplayer).
-            Trade-in prices are automatically calculated based on market data.
+            Prices are sourced from OPTCG TCGplayer. Trade-in prices are automatically calculated based on market data.
           </Banner>
         </Layout.Section>
       </Layout>

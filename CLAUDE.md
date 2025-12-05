@@ -192,7 +192,7 @@ See `.env` for required variables:
 
 ### Sister Application: Trading Card Pricer
 
-Located at `/Users/alex/trading-card-pricer`, this Lambda fetches card prices every 4 hours and writes to `card_prices_v2`.
+Located at `/Users/alex/trading-card-pricer`, this Lambda fetches card prices **twice daily** (8 AM and 8 PM UTC) from OPTCG API and writes to `card_prices_v2`.
 
 **Data flow:**
 ```
@@ -205,29 +205,51 @@ trading-card-pricer (Lambda) → card_prices_v2 table → CardForum (this app)
 
 ### CardPriceV2 Model (External Data)
 
-Normalized card prices from multiple sources. **Managed by Lambda - do not modify directly.**
+Card prices from OPTCG API (TCGplayer source). **Managed by Lambda - do not modify directly.**
 
-**Card ID format:** `{RELEASE_SET}-{CARD_SET_ID}[-{variant}]`
+**Card ID format:** `{RELEASE_SET}-{FULL_CARD_NUMBER}[-{variant}]`
 ```
 Examples:
-  OP01-OP01-003              # Base card
-  OP01-OP01-003-parallel     # Parallel variant
-  OP03-OP01-051-wantedposter # SP card released in OP03
-  OP12-ST18-004-sp           # Starter deck SP in OP12
+  OP01-OP01-003-parallel     # Parallel variant from OP01
+  OP03-OP01-051-sp           # SP card released in OP03, original card OP01-051
+  OP11-EB01-057-sp           # SP card released in OP11, original card EB01-057
+  OP04-OP02-004-sp           # SP card released in OP04, original card OP02-004
 ```
 
 **Key fields:**
-| Field | Description |
-|-------|-------------|
-| `cardId` | Primary key (format above) |
-| `name` | Card name |
-| `setCode`, `cardNumber`, `variantType` | Parsed components |
-| `optcgTcgplayerGbp` | OPTCG API price (TCGplayer) |
-| `limitlessCardmarketGbp` | Limitless price (CardMarket) |
-| `justtcgTcgplayerGbp` | JustTCG price |
-| `bestPriceGbp` | Lowest of all sources |
-| `tradeinPriceGbp` | bestPriceGbp × 0.70 |
-| `imageUrl` | Relative path to card image |
+| Field | Description | Example |
+|-------|-------------|---------|
+| `cardId` | Primary key (format above) | `OP03-OP01-051-sp` |
+| `name` | Card name | `Eustass"Captain"Kid` |
+| `releaseSet` | Booster set where card was released | `OP03` |
+| `fullCardNumber` | Original card number with set prefix | `OP01-051` |
+| `setCode` | Original card's set code | `OP01` |
+| `cardNumber` | Card number within set | `051` |
+| `variantType` | Variant type | `sp`, `parallel`, `manga`, `boxtopper` |
+| `optcgTcgplayerUsd` | OPTCG API price in USD | `45.99` |
+| `optcgTcgplayerGbp` | OPTCG API price in GBP | `34.49` |
+| `bestPriceGbp` | Best available price (= OPTCG price) | `34.49` |
+| `tradeinPriceGbp` | bestPriceGbp × 0.70 | `24.14` |
+| `imageUrl` | Relative path to card image | `OP03/OP03-SP-OP01-051.png` |
+
+**Understanding card identification:**
+- `releaseSet`: The booster pack where this variant was released (e.g., `OP03` for cards from the OP03 booster)
+- `fullCardNumber`: The complete card number (e.g., `OP01-051`) - use this for display to users
+- `setCode` + `cardNumber`: Separated components of `fullCardNumber`
+- For SP cards: `releaseSet` differs from `setCode` (released in different set than original)
+- For parallel cards: `releaseSet` usually equals `setCode` (released in same set as original)
+
+**Variant types:**
+| Type | Description |
+|------|-------------|
+| `parallel` | Standard parallel/alternate art |
+| `sp` | Special art reprint in later set |
+| `manga` | Manga panel art |
+| `boxtopper` | Box topper promo |
+| `spr` | Special rare |
+| `tr` | Treasure rare |
+| `wantedposter` | Wanted poster art |
+| `dashpack` | Dash pack promo |
 
 ### Card Images
 
@@ -252,13 +274,46 @@ const cdnBase = 'https://your-cdn.com/card-images/';
 const fullUrl = `${cdnBase}${card.imageUrl}`;
 ```
 
-**Coverage:** ~858 cards have images mapped (OP01-OP13, EB01-EB02 base cards + SP cards)
+**Coverage:** ~515 variant cards (parallel, SP, manga, etc.) from OP01-OP13 and EB01-EB02
 
 ### Price Sync Process
 
-1. Lambda writes to `card_prices_v2` every 4 hours
-2. Call `syncPricesFromExternal()` in `app/lib/prices.server.ts` to sync to `CardPrice`
-3. Prices converted to pence with condition multipliers applied
+1. Lambda writes to `card_prices_v2` twice daily (8 AM and 8 PM UTC)
+2. Only variant cards are tracked (no base cards) - approximately 515 cards
+3. Call `syncPricesFromExternal()` in `app/lib/prices.server.ts` to sync to `CardPrice`
+4. Prices converted to pence with condition multipliers applied
+
+### Querying Cards
+
+**By release set (cards released in a specific booster):**
+```typescript
+const op11Cards = await prisma.cardPriceV2.findMany({
+  where: { releaseSet: 'OP11' }
+});
+```
+
+**By original card number:**
+```typescript
+const card = await prisma.cardPriceV2.findFirst({
+  where: { fullCardNumber: 'OP01-051' }
+});
+```
+
+**SP cards only:**
+```typescript
+const spCards = await prisma.cardPriceV2.findMany({
+  where: { variantType: 'sp' }
+});
+```
+
+**Display to users - use `fullCardNumber` for the card identifier:**
+```typescript
+// Good: "OP01-051 (SP)" - users recognize this format
+const displayName = `${card.fullCardNumber} (${card.variantType.toUpperCase()})`;
+
+// Also show release set if relevant
+const fullDisplay = `${card.name} ${card.fullCardNumber} - Released in ${card.releaseSet}`;
+```
 
 ## Architecture Notes
 

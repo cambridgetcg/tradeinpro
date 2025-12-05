@@ -77,15 +77,18 @@ model ExternalCardPrice {
 // One row per unique card+variant, with prices from all sources as columns
 // Card ID format: SET-NUMBER or SET-NUMBER-variant (e.g., "OP01-003" or "OP01-003-parallel")
 model CardPriceV2 {
-  // Primary identifier: SET-NUMBER or SET-NUMBER-variant
+  // Primary identifier: {RELEASE_SET}-{FULL_CARD_NUMBER}[-{variant}]
+  // e.g., OP03-OP01-051-sp, OP01-OP01-003-parallel
   cardId             String    @id @map("card_id") @db.VarChar(100)
 
   // Card metadata
   game               String    @default("onepiece") @db.VarChar(50)
   name               String    @db.VarChar(500)
-  setCode            String?   @map("set_code") @db.VarChar(20)
-  cardNumber         String?   @map("card_number") @db.VarChar(20)
-  variantType        String?   @map("variant_type") @db.VarChar(50) // null for base, 'parallel', 'manga', etc.
+  releaseSet         String?   @map("release_set") @db.VarChar(20) // Booster set where card was released (e.g., OP03)
+  fullCardNumber     String?   @map("full_card_number") @db.VarChar(30) // Original card number with set prefix (e.g., OP01-051)
+  setCode            String?   @map("set_code") @db.VarChar(20) // Original card's set code (e.g., OP01)
+  cardNumber         String?   @map("card_number") @db.VarChar(20) // Card number within set (e.g., 051)
+  variantType        String?   @map("variant_type") @db.VarChar(50) // null for base, 'parallel', 'manga', 'sp', etc.
   rarity             String?   @db.VarChar(50)
 
   // OPTCG API prices (TCGplayer source)
@@ -122,6 +125,8 @@ model CardPriceV2 {
   lastUpdated        DateTime? @default(now()) @map("last_updated") @db.Timestamptz
 
   @@index([game], map: "idx_card_prices_v2_game")
+  @@index([releaseSet], map: "idx_card_prices_v2_release_set")
+  @@index([fullCardNumber], map: "idx_card_prices_v2_full_card_number")
   @@index([setCode], map: "idx_card_prices_v2_set_code")
   @@index([variantType], map: "idx_card_prices_v2_variant")
   @@index([bestPriceGbp], map: "idx_card_prices_v2_best_price")
