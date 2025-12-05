@@ -36,6 +36,7 @@ model Session {
 // These tables are managed by the Lambda price fetcher
 // ============================================================================
 
+// Legacy table - being phased out in favor of CardPriceV2
 model ExternalCardPrice {
   cardId             String    @id @map("card_id") @db.VarChar(255)
   name               String    @db.VarChar(500)
@@ -70,6 +71,64 @@ model ExternalCardPrice {
   @@index([tcgplayerPriceGbp], map: "idx_card_prices_tcgplayer_gbp")
   @@index([cardmarketPriceGbp], map: "idx_card_prices_cardmarket_gbp")
   @@map("card_prices")
+}
+
+// NEW: Normalized card prices table (card_prices_v2)
+// One row per unique card+variant, with prices from all sources as columns
+// Card ID format: SET-NUMBER or SET-NUMBER-variant (e.g., "OP01-003" or "OP01-003-parallel")
+model CardPriceV2 {
+  // Primary identifier: SET-NUMBER or SET-NUMBER-variant
+  cardId             String    @id @map("card_id") @db.VarChar(100)
+
+  // Card metadata
+  game               String    @default("onepiece") @db.VarChar(50)
+  name               String    @db.VarChar(500)
+  setCode            String?   @map("set_code") @db.VarChar(20)
+  cardNumber         String?   @map("card_number") @db.VarChar(20)
+  variantType        String?   @map("variant_type") @db.VarChar(50) // null for base, 'parallel', 'manga', etc.
+  rarity             String?   @db.VarChar(50)
+
+  // OPTCG API prices (TCGplayer source)
+  optcgTcgplayerUsd  Decimal?  @map("optcg_tcgplayer_usd") @db.Decimal(10, 2)
+  optcgTcgplayerGbp  Decimal?  @map("optcg_tcgplayer_gbp") @db.Decimal(10, 2)
+  optcgUpdatedAt     DateTime? @map("optcg_updated_at") @db.Timestamptz
+
+  // Limitless prices (CardMarket source)
+  limitlessCardmarketEur Decimal? @map("limitless_cardmarket_eur") @db.Decimal(10, 2)
+  limitlessCardmarketGbp Decimal? @map("limitless_cardmarket_gbp") @db.Decimal(10, 2)
+  limitlessUpdatedAt     DateTime? @map("limitless_updated_at") @db.Timestamptz
+
+  // JustTCG prices (TCGplayer source)
+  justtcgTcgplayerUsd Decimal?  @map("justtcg_tcgplayer_usd") @db.Decimal(10, 2)
+  justtcgTcgplayerGbp Decimal?  @map("justtcg_tcgplayer_gbp") @db.Decimal(10, 2)
+  justtcgUpdatedAt    DateTime? @map("justtcg_updated_at") @db.Timestamptz
+
+  // Best/computed prices (lowest of all sources)
+  bestPriceGbp       Decimal?  @map("best_price_gbp") @db.Decimal(10, 2)
+  tradeinPriceGbp    Decimal?  @map("tradein_price_gbp") @db.Decimal(10, 2)
+
+  // Exchange rates used
+  usdToGbpRate       Decimal?  @map("usd_to_gbp_rate") @db.Decimal(10, 6)
+  eurToGbpRate       Decimal?  @map("eur_to_gbp_rate") @db.Decimal(10, 6)
+
+  // Shopify integration
+  shopifyProductId   String?   @map("shopify_product_id") @db.VarChar(255)
+
+  // Card image URL (local path or CDN URL)
+  imageUrl           String?   @map("image_url") @db.VarChar(500)
+
+  // Timestamps
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  lastUpdated        DateTime? @default(now()) @map("last_updated") @db.Timestamptz
+
+  @@index([game], map: "idx_card_prices_v2_game")
+  @@index([setCode], map: "idx_card_prices_v2_set_code")
+  @@index([variantType], map: "idx_card_prices_v2_variant")
+  @@index([bestPriceGbp], map: "idx_card_prices_v2_best_price")
+  @@index([tradeinPriceGbp], map: "idx_card_prices_v2_tradein")
+  @@index([name], map: "idx_card_prices_v2_name")
+  @@index([shopifyProductId], map: "idx_card_prices_v2_shopify")
+  @@map("card_prices_v2")
 }
 
 model InventoryAltArt {

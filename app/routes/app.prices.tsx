@@ -1,13 +1,10 @@
 import { useState, useCallback } from "react";
 import type {
   LoaderFunctionArgs,
-  ActionFunctionArgs,
   HeadersFunction,
 } from "react-router";
 import {
   useLoaderData,
-  useActionData,
-  useSubmit,
   useNavigation,
   useSearchParams,
 } from "react-router";
@@ -18,37 +15,19 @@ import {
   IndexTable,
   Text,
   Badge,
-  TextField,
   Select,
   Button,
   InlineStack,
   BlockStack,
   Box,
   Pagination,
-  Modal,
-  FormLayout,
-  Checkbox,
   Banner,
-  ProgressBar,
   Filters,
-  ChoiceList,
-  RangeSlider,
   EmptyState,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import {
-  searchPrices,
-  getUniqueGames,
-  getPriceStats,
-  bulkUpdatePrices,
-  deletePrices,
-  syncPricesFromExternal,
-  previewSync,
-  getExternalGames,
-  getExternalPriceCount,
-} from "../lib/prices.server";
-import { formatPrice } from "../lib/constants";
+import prisma from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -56,150 +35,157 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Parse search params
   const search = url.searchParams.get("search") || "";
-  const game = url.searchParams.get("game") || "";
-  const isActive = url.searchParams.get("isActive");
-  const sort = (url.searchParams.get("sort") as "name" | "price-asc" | "price-desc" | "updated") || "name";
+  const setFilter = url.searchParams.get("set") || "";
+  const sort = (url.searchParams.get("sort") as "name" | "price-asc" | "price-desc" | "updated") || "price-desc";
   const page = parseInt(url.searchParams.get("page") || "1");
-  const minPrice = url.searchParams.get("minPrice") ? parseInt(url.searchParams.get("minPrice")!) : undefined;
-  const maxPrice = url.searchParams.get("maxPrice") ? parseInt(url.searchParams.get("maxPrice")!) : undefined;
+  const limit = 20;
 
-  const [searchResult, games, stats, externalGames, externalCount] = await Promise.all([
-    searchPrices({
-      search: search || undefined,
-      game: game || undefined,
-      isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
-      sort,
-      page,
-      limit: 20,
-      minPrice,
-      maxPrice,
+  // Build where clause for CardPriceV2
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: Record<string, any> = {
+    game: "onepiece",
+    tradeinPriceGbp: { not: null },
+  };
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      { cardId: { contains: search, mode: "insensitive" } },
+      { cardNumber: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  if (setFilter) {
+    where.setCode = setFilter.toUpperCase();
+  }
+
+  // Determine sort order
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let orderBy: any;
+  switch (sort) {
+    case "price-asc":
+      orderBy = { tradeinPriceGbp: "asc" };
+      break;
+    case "price-desc":
+      orderBy = { tradeinPriceGbp: "desc" };
+      break;
+    case "updated":
+      orderBy = { lastUpdated: "desc" };
+      break;
+    case "name":
+    default:
+      orderBy = [{ setCode: "asc" }, { cardNumber: "asc" }];
+      break;
+  }
+
+  // Query CardPriceV2 directly
+  const [prices, total, sets, stats] = await Promise.all([
+    prisma.cardPriceV2.findMany({
+      where,
+      orderBy,
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        cardId: true,
+        name: true,
+        setCode: true,
+        cardNumber: true,
+        variantType: true,
+        rarity: true,
+        optcgTcgplayerGbp: true,
+        justtcgTcgplayerGbp: true,
+        bestPriceGbp: true,
+        tradeinPriceGbp: true,
+        lastUpdated: true,
+      },
     }),
-    getUniqueGames(),
-    getPriceStats(),
-    getExternalGames(),
-    getExternalPriceCount(),
+    prisma.cardPriceV2.count({ where }),
+    prisma.cardPriceV2.groupBy({
+      by: ["setCode"],
+      where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+      orderBy: { setCode: "asc" },
+    }),
+    prisma.cardPriceV2.aggregate({
+      where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+      _count: true,
+      _avg: { tradeinPriceGbp: true },
+    }),
   ]);
 
+  // Transform prices for display
+  const transformedPrices = prices.map((p: typeof prices[number]) => ({
+    id: p.cardId,
+    setCode: p.setCode,
+    cardNumber: p.cardNumber,
+    name: p.name,
+    variantType: p.variantType,
+    rarity: p.rarity,
+    optcgPrice: p.optcgTcgplayerGbp ? Number(p.optcgTcgplayerGbp) : null,
+    justtcgPrice: p.justtcgTcgplayerGbp ? Number(p.justtcgTcgplayerGbp) : null,
+    bestPrice: p.bestPriceGbp ? Number(p.bestPriceGbp) : null,
+    tradeinPrice: p.tradeinPriceGbp ? Number(p.tradeinPriceGbp) : null,
+    lastUpdated: p.lastUpdated,
+  }));
+
   return {
-    prices: searchResult.prices,
-    pagination: searchResult.pagination,
-    games,
-    stats,
-    externalGames,
-    externalCount,
+    prices: transformedPrices,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+    sets: sets.map((s: { setCode: string | null }) => s.setCode).filter((s: string | null): s is string => s !== null),
+    stats: {
+      totalPrices: stats._count,
+      averageTradeIn: stats._avg.tradeinPriceGbp ? Number(stats._avg.tradeinPriceGbp) : 0,
+    },
     filters: {
       search,
-      game,
-      isActive,
+      set: setFilter,
       sort,
-      minPrice,
-      maxPrice,
     },
     shop: session.shop,
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const intent = formData.get("intent");
 
-  if (intent === "bulkSetActive" || intent === "bulkSetInactive") {
-    const ids = JSON.parse(formData.get("ids") as string) as string[];
-    const isActive = intent === "bulkSetActive";
+// Helper to format GBP price
+function formatGbp(value: number | null): string {
+  if (value === null) return "—";
+  return `£${value.toFixed(2)}`;
+}
 
-    const result = await bulkUpdatePrices(ids, { isActive });
-
-    return {
-      success: true,
-      message: `${result.success} prices ${isActive ? "activated" : "deactivated"}`,
-    };
-  }
-
-  if (intent === "bulkDelete") {
-    const ids = JSON.parse(formData.get("ids") as string) as string[];
-    const result = await deletePrices(ids);
-
-    return {
-      success: true,
-      message: `${result.success} prices deleted${result.failed > 0 ? ` (${result.failed} skipped - in use)` : ""}`,
-    };
-  }
-
-  if (intent === "previewSync") {
-    const game = formData.get("syncGame") as string || undefined;
-    const overwriteExisting = formData.get("overwriteExisting") === "true";
-    const applyMultipliers = formData.get("applyMultipliers") === "true";
-    const skipBelowMinimum = formData.get("skipBelowMinimum") === "true";
-
-    const preview = await previewSync(session.shop, {
-      game,
-      overwriteExisting,
-      applyMultipliers,
-      skipBelowMinimum,
-    });
-
-    return {
-      success: true,
-      preview,
-    };
-  }
-
-  if (intent === "sync") {
-    const game = formData.get("syncGame") as string || undefined;
-    const overwriteExisting = formData.get("overwriteExisting") === "true";
-    const applyMultipliers = formData.get("applyMultipliers") === "true";
-    const skipBelowMinimum = formData.get("skipBelowMinimum") === "true";
-
-    const result = await syncPricesFromExternal(session.shop, {
-      game,
-      overwriteExisting,
-      applyMultipliers,
-      skipBelowMinimum,
-    });
-
-    return {
-      success: true,
-      syncResult: result,
-      message: `Sync complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`,
-    };
-  }
-
-  return { success: false, message: "Unknown action" };
-};
+// Price type from loader
+interface PriceRow {
+  id: string;
+  setCode: string | null;
+  cardNumber: string | null;
+  name: string;
+  variantType: string | null;
+  rarity: string | null;
+  optcgPrice: number | null;
+  justtcgPrice: number | null;
+  bestPrice: number | null;
+  tradeinPrice: number | null;
+  lastUpdated: Date | null;
+}
 
 export default function Prices() {
   const {
     prices,
     pagination,
-    games,
+    sets,
     stats,
-    externalGames,
-    externalCount,
     filters,
   } = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
-  const submit = useSubmit();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isLoading = navigation.state === "loading" || navigation.state === "submitting";
-
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  // Sync modal state
-  const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [syncGame, setSyncGame] = useState("");
-  const [overwriteExisting, setOverwriteExisting] = useState(false);
-  const [applyMultipliers, setApplyMultipliers] = useState(true);
-  const [skipBelowMinimum, setSkipBelowMinimum] = useState(true);
+  const isLoading = navigation.state === "loading";
 
   // Local filter state
   const [searchValue, setSearchValue] = useState(filters.search);
-  const [gameFilter, setGameFilter] = useState(filters.game);
-  const [activeFilter, setActiveFilter] = useState<string[]>(
-    filters.isActive ? [filters.isActive] : []
-  );
+  const [setFilter, setSetFilter] = useState(filters.set);
 
   const handleSearch = useCallback(() => {
     const params = new URLSearchParams(searchParams);
@@ -212,29 +198,14 @@ export default function Prices() {
     setSearchParams(params);
   }, [searchValue, searchParams, setSearchParams]);
 
-  const handleGameChange = useCallback(
+  const handleSetChange = useCallback(
     (value: string) => {
-      setGameFilter(value);
+      setSetFilter(value);
       const params = new URLSearchParams(searchParams);
       if (value) {
-        params.set("game", value);
+        params.set("set", value);
       } else {
-        params.delete("game");
-      }
-      params.set("page", "1");
-      setSearchParams(params);
-    },
-    [searchParams, setSearchParams]
-  );
-
-  const handleActiveFilterChange = useCallback(
-    (value: string[]) => {
-      setActiveFilter(value);
-      const params = new URLSearchParams(searchParams);
-      if (value.length > 0) {
-        params.set("isActive", value[0]);
-      } else {
-        params.delete("isActive");
+        params.delete("set");
       }
       params.set("page", "1");
       setSearchParams(params);
@@ -260,114 +231,70 @@ export default function Prices() {
     [searchParams, setSearchParams]
   );
 
-  const handleBulkAction = (action: "activate" | "deactivate" | "delete") => {
-    const formData = new FormData();
-
-    if (action === "activate") {
-      formData.set("intent", "bulkSetActive");
-    } else if (action === "deactivate") {
-      formData.set("intent", "bulkSetInactive");
-    } else {
-      formData.set("intent", "bulkDelete");
-    }
-
-    formData.set("ids", JSON.stringify(selectedIds));
-    submit(formData, { method: "post" });
-    setSelectedIds([]);
-  };
-
-  const handleSync = () => {
-    const formData = new FormData();
-    formData.set("intent", "sync");
-    formData.set("syncGame", syncGame);
-    formData.set("overwriteExisting", overwriteExisting.toString());
-    formData.set("applyMultipliers", applyMultipliers.toString());
-    formData.set("skipBelowMinimum", skipBelowMinimum.toString());
-    submit(formData, { method: "post" });
-    setSyncModalOpen(false);
-  };
-
   const resourceName = {
-    singular: "price",
-    plural: "prices",
+    singular: "card",
+    plural: "cards",
   };
-
-  const promotedBulkActions = [
-    {
-      content: "Set Active",
-      onAction: () => handleBulkAction("activate"),
-    },
-    {
-      content: "Set Inactive",
-      onAction: () => handleBulkAction("deactivate"),
-    },
-  ];
-
-  const bulkActions = [
-    {
-      content: "Delete",
-      onAction: () => handleBulkAction("delete"),
-      destructive: true,
-    },
-  ];
 
   const setOptions = [
     { label: "All Sets", value: "" },
-    ...games.map((g) => ({ label: g.toUpperCase(), value: g })),
+    ...sets.map((s: string) => ({ label: s.toUpperCase(), value: s })),
   ];
 
   const sortOptions = [
-    { label: "Name A-Z", value: "name" },
+    { label: "Set / Card #", value: "name" },
     { label: "Price: Low to High", value: "price-asc" },
     { label: "Price: High to Low", value: "price-desc" },
     { label: "Recently Updated", value: "updated" },
   ];
 
-  const rowMarkup = prices.map((price, index) => (
+  const rowMarkup = (prices as PriceRow[]).map((price: PriceRow, index: number) => (
     <IndexTable.Row
       id={price.id}
       key={price.id}
-      selected={selectedIds.includes(price.id)}
       position={index}
     >
       <IndexTable.Cell>
         <Text variant="bodyMd" fontWeight="bold" as="span">
-          {price.sku || price.setCode || "—"}
+          {price.setCode?.toUpperCase() || "—"}
         </Text>
-      </IndexTable.Cell>
-      <IndexTable.Cell>
-        <Badge tone="info">{price.setCode?.toUpperCase() || "—"}</Badge>
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text variant="bodyMd" as="span">
-          {price.cardName}
+          {price.cardNumber || "—"}
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {price.variant && (
-          <Badge>{price.variant}</Badge>
-        )}
-        {price.rarity && (
-          <Badge tone="attention">{price.rarity}</Badge>
-        )}
+        <BlockStack gap="100">
+          <Text variant="bodyMd" as="span">
+            {price.name}
+          </Text>
+          {(price.variantType || price.rarity) && (
+            <InlineStack gap="100">
+              {price.variantType && (
+                <Badge size="small">{price.variantType}</Badge>
+              )}
+              {price.rarity && (
+                <Badge size="small" tone="attention">{price.rarity}</Badge>
+              )}
+            </InlineStack>
+          )}
+        </BlockStack>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <InlineStack gap="200">
-          <Text variant="bodySm" as="span">
-            <strong>NM</strong> {formatPrice(price.priceNM)}
-          </Text>
-          <Text variant="bodySm" as="span" tone="subdued">
-            LP {formatPrice(price.priceLP)}
-          </Text>
-          <Text variant="bodySm" as="span" tone="subdued">
-            MP {formatPrice(price.priceMP)}
-          </Text>
-        </InlineStack>
+        <Text variant="bodyMd" as="span">
+          {formatGbp(price.optcgPrice)}
+        </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        <Badge tone={price.isActive ? "success" : undefined}>
-          {price.isActive ? "Active" : "Inactive"}
-        </Badge>
+        <Text variant="bodyMd" as="span">
+          {formatGbp(price.justtcgPrice)}
+        </Text>
+      </IndexTable.Cell>
+      <IndexTable.Cell>
+        <Text variant="bodyMd" fontWeight="semibold" as="span">
+          {formatGbp(price.tradeinPrice)}
+        </Text>
       </IndexTable.Cell>
     </IndexTable.Row>
   ));
@@ -380,7 +307,7 @@ export default function Prices() {
       <p>
         {filters.search
           ? "Try adjusting your search or filters"
-          : "Sync prices from external sources or add them manually"}
+          : "No card prices available"}
       </p>
     </EmptyState>
   );
@@ -398,8 +325,7 @@ export default function Prices() {
       }}
       onClearAll={() => {
         setSearchValue("");
-        setGameFilter("");
-        setActiveFilter([]);
+        setSetFilter("");
         setSearchParams(new URLSearchParams());
       }}
       filters={[
@@ -411,25 +337,8 @@ export default function Prices() {
               label=""
               labelHidden
               options={setOptions}
-              value={gameFilter}
-              onChange={handleGameChange}
-            />
-          ),
-          shortcut: true,
-        },
-        {
-          key: "status",
-          label: "Status",
-          filter: (
-            <ChoiceList
-              title="Status"
-              titleHidden
-              choices={[
-                { label: "Active", value: "true" },
-                { label: "Inactive", value: "false" },
-              ]}
-              selected={activeFilter}
-              onChange={handleActiveFilterChange}
+              value={setFilter}
+              onChange={handleSetChange}
             />
           ),
           shortcut: true,
@@ -441,72 +350,43 @@ export default function Prices() {
   );
 
   return (
-    <Page
-      title="Card Prices"
-      primaryAction={{
-        content: "Sync Prices",
-        onAction: () => setSyncModalOpen(true),
-      }}
-    >
+    <Page title="Card Prices">
       <Layout>
-        {actionData?.message && (
-          <Layout.Section>
-            <Banner
-              tone={actionData.success ? "success" : "critical"}
-              onDismiss={() => {}}
-            >
-              {actionData.message}
-            </Banner>
-          </Layout.Section>
-        )}
-
         {/* Stats Cards */}
         <Layout.Section>
           <InlineStack gap="400" wrap={false}>
-            <Box minWidth="150px">
+            <Box minWidth="200px">
               <Card>
                 <BlockStack gap="200">
                   <Text variant="headingMd" as="h3">
                     {stats.totalPrices.toLocaleString()}
                   </Text>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    Total Prices
+                    Total Cards
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
-            <Box minWidth="150px">
+            <Box minWidth="200px">
               <Card>
                 <BlockStack gap="200">
                   <Text variant="headingMd" as="h3">
-                    {stats.activePrices.toLocaleString()}
+                    {formatGbp(stats.averageTradeIn)}
                   </Text>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    Active
+                    Avg Trade-In
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
-            <Box minWidth="150px">
+            <Box minWidth="200px">
               <Card>
                 <BlockStack gap="200">
                   <Text variant="headingMd" as="h3">
-                    {formatPrice(Math.round(stats.averageNMPrice))}
+                    {sets.length}
                   </Text>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    Avg NM Price
-                  </Text>
-                </BlockStack>
-              </Card>
-            </Box>
-            <Box minWidth="150px">
-              <Card>
-                <BlockStack gap="200">
-                  <Text variant="headingMd" as="h3">
-                    {externalCount.toLocaleString()}
-                  </Text>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    External Prices
+                    Sets Available
                   </Text>
                 </BlockStack>
               </Card>
@@ -534,30 +414,15 @@ export default function Prices() {
               <IndexTable
                 resourceName={resourceName}
                 itemCount={prices.length}
-                selectedItemsCount={selectedIds.length}
-                onSelectionChange={(selectionType, isSelecting, selection) => {
-                  if (selectionType === "all") {
-                    setSelectedIds(isSelecting ? prices.map((p) => p.id) : []);
-                  } else if (selectionType === "page") {
-                    setSelectedIds(isSelecting ? prices.map((p) => p.id) : []);
-                  } else if (typeof selection === "string") {
-                    if (isSelecting) {
-                      setSelectedIds([...selectedIds, selection]);
-                    } else {
-                      setSelectedIds(selectedIds.filter((id) => id !== selection));
-                    }
-                  }
-                }}
+                selectable={false}
                 headings={[
-                  { title: "Card #" },
                   { title: "Set" },
+                  { title: "Card #" },
                   { title: "Name" },
-                  { title: "Details" },
-                  { title: "Prices" },
-                  { title: "Status" },
+                  { title: "OPTCG Price" },
+                  { title: "JustTCG Price" },
+                  { title: "Trade-In" },
                 ]}
-                promotedBulkActions={promotedBulkActions}
-                bulkActions={bulkActions}
                 loading={isLoading}
                 emptyState={emptyStateMarkup}
               >
@@ -580,75 +445,14 @@ export default function Prices() {
             </BlockStack>
           </Card>
         </Layout.Section>
+
+        <Layout.Section>
+          <Banner tone="info">
+            Prices are sourced from external price feeds (OPTCG TCGplayer, JustTCG TCGplayer).
+            Trade-in prices are automatically calculated based on market data.
+          </Banner>
+        </Layout.Section>
       </Layout>
-
-      {/* Sync Modal */}
-      <Modal
-        open={syncModalOpen}
-        onClose={() => setSyncModalOpen(false)}
-        title="Sync Prices from External Source"
-        primaryAction={{
-          content: isLoading ? "Syncing..." : "Start Sync",
-          onAction: handleSync,
-          loading: isLoading,
-        }}
-        secondaryActions={[
-          {
-            content: "Cancel",
-            onAction: () => setSyncModalOpen(false),
-          },
-        ]}
-      >
-        <Modal.Section>
-          <BlockStack gap="400">
-            <Text as="p">
-              Sync prices from the external price feed. This will update your
-              internal card prices based on external market data.
-            </Text>
-
-            <FormLayout>
-              <Select
-                label="Set Filter"
-                options={[
-                  { label: "All Sets", value: "" },
-                  ...externalGames.map((g) => ({ label: g.toUpperCase(), value: g })),
-                ]}
-                value={syncGame}
-                onChange={setSyncGame}
-                helpText="Filter to sync only specific set prices (e.g., OP01, OP03)"
-              />
-
-              <Checkbox
-                label="Apply condition multipliers"
-                checked={applyMultipliers}
-                onChange={setApplyMultipliers}
-                helpText="Apply your configured condition multipliers (NM, LP, etc.) to the base price"
-              />
-
-              <Checkbox
-                label="Skip cards below minimum price"
-                checked={skipBelowMinimum}
-                onChange={setSkipBelowMinimum}
-                helpText="Skip cards with NM price below £0.50"
-              />
-
-              <Checkbox
-                label="Overwrite existing prices"
-                checked={overwriteExisting}
-                onChange={setOverwriteExisting}
-                helpText="Warning: This will overwrite any manual price adjustments"
-              />
-            </FormLayout>
-
-            {externalCount > 0 && (
-              <Banner tone="info">
-                {externalCount.toLocaleString()} external prices available
-                {syncGame && ` (filtered by ${syncGame})`}
-              </Banner>
-            )}
-          </BlockStack>
-        </Modal.Section>
-      </Modal>
     </Page>
   );
 }
