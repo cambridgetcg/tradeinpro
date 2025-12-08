@@ -219,7 +219,7 @@ export default function Settings() {
     setAddressModalOpen(false);
   };
 
-  const errors = actionData && !actionData.success ? actionData.errors : {};
+  const errors = actionData && !actionData.success ? actionData.errors || {} : {};
 
   return (
     <Page

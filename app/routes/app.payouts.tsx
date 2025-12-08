@@ -397,7 +397,9 @@ export default function Payouts() {
               onDismiss={() => {}}
             >
               {actionData.message}
-              {actionData.error && <p>{actionData.error}</p>}
+              {!actionData.success && (actionData as { error?: string }).error && (
+                <p>{(actionData as { error?: string }).error}</p>
+              )}
             </Banner>
           </Layout.Section>
         )}

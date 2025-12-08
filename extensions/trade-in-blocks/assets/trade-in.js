@@ -101,7 +101,8 @@
       // Success elements
       submissionNumber: form.querySelector("[data-submission-number]"),
       trackingLink: form.querySelector("[data-tracking-link]"),
-      labelLink: form.querySelector("[data-label-link]"),
+      packingSlipLink: form.querySelector("[data-packing-slip-link]"),
+      shippingLink: form.querySelector("[data-shipping-link]"),
       newSubmissionBtn: form.querySelector("[data-new-submission]"),
       // Modal
       modal: document.querySelector("[data-condition-modal]"),
@@ -870,21 +871,26 @@
     state.isSubmitting = false;
 
     if (result.success) {
+      const submissionNumber = result.submission.submissionNumber;
+
       // Show success
       if (elements.submissionNumber) {
-        elements.submissionNumber.textContent = result.submission.submissionNumber;
+        elements.submissionNumber.textContent = submissionNumber;
       }
       if (elements.trackingLink) {
-        elements.trackingLink.href = `/apps/trade-in/track?number=${result.submission.submissionNumber}`;
+        elements.trackingLink.href = `${elements.apiBase}/track?number=${submissionNumber}`;
       }
-      if (elements.labelLink && result.submission.labelUrl) {
-        elements.labelLink.href = result.submission.labelUrl;
-        elements.labelLink.hidden = false;
+      if (elements.packingSlipLink) {
+        elements.packingSlipLink.href = `${elements.apiBase}/packing-slip/${submissionNumber}`;
+      }
+      if (elements.shippingLink) {
+        elements.shippingLink.href = `${elements.apiBase}/shipping-instructions/${submissionNumber}`;
       }
 
       showFormSection("success");
 
-      // Clear cart
+      // Clear cart from storage after successful submission
+      clearCartStorage();
       state.cart = [];
     } else {
       // Show error

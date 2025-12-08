@@ -752,10 +752,46 @@
   font-family: monospace;
 }
 
+.trade-in-success__next-steps {
+  background: var(--ti-bg-muted);
+  padding: 1.25rem;
+  border-radius: var(--ti-radius);
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.trade-in-success__next-steps h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.trade-in-success__next-steps ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.trade-in-success__next-steps li {
+  margin-bottom: 0.5rem;
+  color: var(--ti-text-muted);
+  font-size: 0.9375rem;
+}
+
+.trade-in-success__next-steps li:last-child {
+  margin-bottom: 0;
+}
+
 .trade-in-success__actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.75rem;
+}
+
+@media (min-width: 480px) {
+  .trade-in-success__actions {
+    flex-direction: row;
+  }
 }
 
 .trade-in-success__btn {
@@ -1222,6 +1258,13 @@ body.trade-in-modal-open {
 .trade-in-timeline__time {
   font-size: 0.875rem;
   color: var(--ti-text-muted);
+}
+
+.trade-in-timeline__desc {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ti-text-muted);
+  margin-top: 0.125rem;
 }
 
 /* ============================================================================

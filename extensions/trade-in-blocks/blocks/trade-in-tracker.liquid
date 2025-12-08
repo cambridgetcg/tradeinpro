@@ -86,13 +86,17 @@
     error.hidden = true;
 
     try {
-      const response = await fetch(`${apiBase}/submissions/${encodeURIComponent(number)}?number=${encodeURIComponent(number)}`);
+      const response = await fetch(`${apiBase}/track?number=${encodeURIComponent(number)}`);
       const data = await response.json();
 
       loading.hidden = true;
 
-      if (data.error || !data.submissionNumber) {
+      if (!data.found || data.error) {
         error.hidden = false;
+        const errorEl = tracker.querySelector('[data-tracker-error] p:first-child');
+        if (errorEl && data.error) {
+          errorEl.textContent = data.error;
+        }
         return;
       }
 
@@ -100,14 +104,15 @@
       const numberEl = tracker.querySelector('[data-result-number]');
       const statusEl = tracker.querySelector('[data-result-status]');
       const timelineEl = tracker.querySelector('[data-result-timeline]');
+      const actionEl = tracker.querySelector('[data-result-action]');
 
       if (numberEl) {
-        numberEl.textContent = data.submissionNumber;
+        numberEl.textContent = data.submission.submissionNumber;
       }
 
       if (statusEl) {
-        statusEl.textContent = data.statusLabel || statusLabels[data.status] || data.status;
-        statusEl.className = 'trade-in-tracker__status trade-in-tracker__status--' + data.status.toLowerCase().replace('_', '-');
+        statusEl.textContent = data.submission.statusLabel || statusLabels[data.submission.status] || data.submission.status;
+        statusEl.className = 'trade-in-tracker__status trade-in-tracker__status--' + data.submission.status.toLowerCase().replace('_', '-');
       }
 
       // Build timeline
@@ -121,10 +126,30 @@
             '<div class="trade-in-timeline__marker"></div>' +
             '<div class="trade-in-timeline__content">' +
               '<span class="trade-in-timeline__label">' + escapeHtml(event.label) + '</span>' +
-              (event.timestamp ? '<span class="trade-in-timeline__time">' + formatDate(event.timestamp) + '</span>' : '') +
+              '<span class="trade-in-timeline__desc">' + escapeHtml(event.description) + '</span>' +
+              (event.completedAt ? '<span class="trade-in-timeline__time">' + formatDate(event.completedAt) + '</span>' : '') +
             '</div>' +
           '</div>';
         }).join('');
+      }
+
+      // Show shipping actions if applicable
+      if (actionEl) {
+        const status = data.submission.status;
+        if (status === 'SUBMITTED' || status === 'IN_TRANSIT') {
+          const messageEl = actionEl.querySelector('[data-action-message]');
+          if (messageEl) {
+            messageEl.innerHTML = '<a href="' + apiBase + '/packing-slip/' + encodeURIComponent(number) + '" target="_blank">Download Packing Slip</a> | ' +
+              '<a href="' + apiBase + '/shipping-instructions/' + encodeURIComponent(number) + '" target="_blank">Shipping Instructions</a>';
+          }
+          actionEl.hidden = false;
+        } else if (status === 'PENDING_APPROVAL' && data.gradingResults) {
+          const messageEl = actionEl.querySelector('[data-action-message]');
+          if (messageEl && data.gradingResults.hasAdjustments) {
+            messageEl.textContent = 'Some items were adjusted. Please review the grading results.';
+          }
+          actionEl.hidden = false;
+        }
       }
 
       result.hidden = false;
@@ -184,12 +209,15 @@
 })();
 </script>
 
-<link rel="stylesheet" href="{{ 'trade-in.css' | asset_url }}">
-
 {% schema %}
 {
   "name": "Submission Tracker",
   "target": "section",
+  "stylesheet": "trade-in.css",
+  "enabled_on": {
+    "templates": ["index", "page"],
+    "groups": ["body", "aside"]
+  },
   "settings": [
     {
       "type": "text",

@@ -1,0 +1,57 @@
+{
+  "trade_in_form": {
+    "name": "Trade-In Form",
+    "settings": {
+      "title": {
+        "label": "Title"
+      },
+      "subtitle": {
+        "label": "Subtitle"
+      },
+      "show_condition_guide": {
+        "label": "Show condition guide"
+      },
+      "show_browse_section": {
+        "label": "Show card browse section",
+        "info": "Display a browsable grid of cards with images"
+      },
+      "browse_title": {
+        "label": "Browse section title"
+      },
+      "show_minimum_notice": {
+        "label": "Show minimum value notice"
+      },
+      "minimum_value": {
+        "label": "Minimum Value (GBP)"
+      }
+    }
+  },
+  "submission_tracker": {
+    "name": "Submission Tracker",
+    "settings": {
+      "title": {
+        "label": "Title"
+      }
+    }
+  },
+  "trade_in_cta": {
+    "name": "Trade-In CTA",
+    "settings": {
+      "title": {
+        "label": "Title"
+      },
+      "description": {
+        "label": "Description"
+      },
+      "button_text": {
+        "label": "Button text"
+      },
+      "link": {
+        "label": "Button link"
+      },
+      "show_features": {
+        "label": "Show features"
+      }
+    }
+  }
+}

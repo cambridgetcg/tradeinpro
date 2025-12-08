@@ -418,6 +418,59 @@ export default function Dashboard() {
           </BlockStack>
         </Card>
 
+        {/* Storefront Setup */}
+        <Card>
+          <BlockStack gap="300">
+            <InlineStack align="space-between">
+              <Text as="h2" variant="headingMd">Storefront Setup</Text>
+              <Badge tone="attention">Setup Required</Badge>
+            </InlineStack>
+            <Text as="p" variant="bodyMd" tone="subdued">
+              Add the trade-in blocks to your theme to let customers submit trade-ins.
+            </Text>
+            <InlineGrid columns={{ xs: 1, sm: 3 }} gap="300">
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">Trade-In Form</Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Main submission form for customers to search cards and submit trade-ins.
+                </Text>
+                <Button
+                  url="shopify://admin/themes/current/editor?context=apps"
+                  external
+                >
+                  Add to Theme
+                </Button>
+              </BlockStack>
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">Submission Tracker</Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Let customers check the status of their submission.
+                </Text>
+                <Button
+                  url="shopify://admin/themes/current/editor?context=apps"
+                  external
+                  variant="secondary"
+                >
+                  Add to Theme
+                </Button>
+              </BlockStack>
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">CTA Block</Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Promotional call-to-action with key trade-in features.
+                </Text>
+                <Button
+                  url="shopify://admin/themes/current/editor?context=apps"
+                  external
+                  variant="secondary"
+                >
+                  Add to Theme
+                </Button>
+              </BlockStack>
+            </InlineGrid>
+          </BlockStack>
+        </Card>
+
         {/* Quick Actions */}
         <Text as="h2" variant="headingMd">Quick Actions</Text>
         <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">

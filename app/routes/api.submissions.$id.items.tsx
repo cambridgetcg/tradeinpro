@@ -19,7 +19,7 @@ import {
   removeItemFromSubmission,
   type CreateItemInput,
 } from "../lib/submissions.server";
-import { Condition } from "../lib/constants";
+import { type ConditionType } from "../lib/constants";
 
 const VALID_CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 const MAX_QUANTITY_PER_ITEM = 99;
@@ -89,7 +89,7 @@ async function handleAddItem(submissionId: string, request: Request) {
     setCode: body.setCode ? sanitizeString(body.setCode, 20) : undefined,
     variant: body.variant ? sanitizeString(body.variant, 100) : undefined,
     quantity: body.quantity,
-    conditionClaimed: body.conditionClaimed as Condition,
+    conditionClaimed: body.conditionClaimed as ConditionType,
   };
 
   try {

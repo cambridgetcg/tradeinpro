@@ -5,7 +5,7 @@
 
 import prisma from "../db.server";
 import type { Prisma } from "@prisma/client";
-import { Condition, formatPrice, PayoutType } from "./constants";
+import { Condition, formatPrice, PayoutType, type ConditionType, type PayoutTypeValue } from "./constants";
 
 // ============================================================================
 // Types
@@ -18,7 +18,7 @@ export interface CreateItemInput {
   setCode?: string;
   variant?: string;
   quantity: number;
-  conditionClaimed: Condition;
+  conditionClaimed: ConditionType;
 }
 
 export interface CreateSubmissionInput {
@@ -26,7 +26,7 @@ export interface CreateSubmissionInput {
   email: string;
   firstName?: string;
   lastName?: string;
-  payoutType: PayoutType;
+  payoutType: PayoutTypeValue;
   items: CreateItemInput[];
 }
 
@@ -217,7 +217,7 @@ export function getConditionPrice(
     priceHP: number;
     priceDMG: number;
   },
-  condition: Condition
+  condition: ConditionType
 ): number {
   switch (condition) {
     case Condition.NM:

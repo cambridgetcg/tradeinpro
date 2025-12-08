@@ -1,9 +1,15 @@
-api_version = "2024-10"
+api_version = "2025-01"
 
 [[extensions]]
 name = "Trade-In System"
 handle = "trade-in-blocks"
 type = "theme"
+
+  [[extensions.assets]]
+  source = "assets/trade-in.css"
+
+  [[extensions.assets]]
+  source = "assets/trade-in.js"
 
   [[extensions.blocks]]
   name = "Trade-In Form"

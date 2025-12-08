@@ -3,6 +3,7 @@ import { useLoaderData, Link, useSearchParams, useNavigate } from "react-router"
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
+import type { Prisma } from "@prisma/client";
 import {
   SubmissionStatus,
   SubmissionStatusLabels,
@@ -55,7 +56,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const sort = url.searchParams.get("sort") || "newest";
 
   // Build where clause
-  const where: Parameters<typeof prisma.tradeInSubmission.findMany>[0]["where"] = {
+  const where: Prisma.TradeInSubmissionWhereInput = {
     // Exclude drafts by default
     status: { not: SubmissionStatus.DRAFT },
   };
@@ -83,7 +84,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   // Build orderBy
-  let orderBy: Parameters<typeof prisma.tradeInSubmission.findMany>[0]["orderBy"];
+  let orderBy: Prisma.TradeInSubmissionOrderByWithRelationInput;
   switch (sort) {
     case "oldest":
       orderBy = { createdAt: "asc" };

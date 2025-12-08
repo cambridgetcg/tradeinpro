@@ -259,15 +259,27 @@
         <span class="trade-in-success__number" data-submission-number></span>
       </div>
 
+      <div class="trade-in-success__next-steps">
+        <h4>{{ 'trade_in.success.next_steps' | t | default: "What's Next?" }}</h4>
+        <ol>
+          <li>{{ 'trade_in.success.step_1' | t | default: 'Print your packing slip and include it with your cards' }}</li>
+          <li>{{ 'trade_in.success.step_2' | t | default: 'Pack your cards safely (penny sleeves + toploaders for valuable cards)' }}</li>
+          <li>{{ 'trade_in.success.step_3' | t | default: 'Ship to our address using tracked delivery' }}</li>
+        </ol>
+      </div>
+
       <div class="trade-in-success__actions">
-        <a href="#" class="trade-in-success__btn trade-in-success__btn--primary" data-tracking-link>
-          {{ 'trade_in.success.track' | t }}
+        <a href="#" class="trade-in-success__btn trade-in-success__btn--primary" data-packing-slip-link target="_blank">
+          {{ 'trade_in.success.packing_slip' | t | default: 'Download Packing Slip' }}
         </a>
-        <a href="#" class="trade-in-success__btn" data-label-link hidden>
-          {{ 'trade_in.success.print_label' | t }}
+        <a href="#" class="trade-in-success__btn" data-shipping-link target="_blank">
+          {{ 'trade_in.success.shipping_instructions' | t | default: 'Shipping Instructions' }}
+        </a>
+        <a href="#" class="trade-in-success__btn" data-tracking-link>
+          {{ 'trade_in.success.track' | t | default: 'Track Submission' }}
         </a>
         <button type="button" class="trade-in-success__btn trade-in-success__btn--secondary" data-new-submission>
-          {{ 'trade_in.success.new_submission' | t }}
+          {{ 'trade_in.success.new_submission' | t | default: 'Start New Trade-In' }}
         </button>
       </div>
     </div>
@@ -341,13 +353,16 @@
   </div>
 </div>
 
-<script src="{{ 'trade-in.js' | asset_url }}" defer></script>
-<link rel="stylesheet" href="{{ 'trade-in.css' | asset_url }}">
-
 {% schema %}
 {
   "name": "Trade-In Form",
   "target": "section",
+  "stylesheet": "trade-in.css",
+  "javascript": "trade-in.js",
+  "enabled_on": {
+    "templates": ["index", "page", "product", "collection"],
+    "groups": ["body", "aside"]
+  },
   "settings": [
     {
       "type": "text",

@@ -21,7 +21,7 @@ import {
   getCustomerSubmissions,
   type CreateItemInput,
 } from "../lib/submissions.server";
-import { Condition, PayoutType } from "../lib/constants";
+import { Condition, PayoutType, type ConditionType, type PayoutTypeValue } from "../lib/constants";
 
 // ============================================================================
 // GET - List customer submissions
@@ -89,7 +89,7 @@ export async function action({ request }: ActionFunctionArgs) {
       setCode: item.setCode ? sanitizeString(item.setCode, 20) : undefined,
       variant: item.variant ? sanitizeString(item.variant, 100) : undefined,
       quantity: item.quantity,
-      conditionClaimed: item.conditionClaimed as Condition,
+      conditionClaimed: item.conditionClaimed as ConditionType,
     }));
 
     const result = await createSubmission({
@@ -97,7 +97,7 @@ export async function action({ request }: ActionFunctionArgs) {
       email: body.email.toLowerCase().trim(),
       firstName: body.firstName ? sanitizeString(body.firstName, 100) : undefined,
       lastName: body.lastName ? sanitizeString(body.lastName, 100) : undefined,
-      payoutType: body.payoutType as PayoutType,
+      payoutType: body.payoutType as PayoutTypeValue,
       items,
     });
 

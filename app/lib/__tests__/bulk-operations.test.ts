@@ -182,10 +182,10 @@ describe("Bulk Operations", () => {
       ];
 
       vi.mocked(prisma.tradeInSubmission.findUnique).mockImplementation(
-        async ({ where }: { where: { id: string } }) => {
-          const sub = submissions.find((s) => s.id === where.id);
+        (async (args: any) => {
+          const sub = submissions.find((s) => s.id === args.where.id);
           return sub as any;
-        }
+        }) as any
       );
       vi.mocked(prisma.tradeInSubmission.update).mockResolvedValue({} as any);
 
@@ -553,10 +553,10 @@ describe("Bulk Operations", () => {
       ];
 
       vi.mocked(prisma.tradeInSubmission.findUnique).mockImplementation(
-        async ({ where }) => {
-          if (where.id === "sub_2") return null;
-          return submissions.find((s) => s?.id === where.id) as any;
-        }
+        (async (args: any) => {
+          if (args.where.id === "sub_2") return null;
+          return submissions.find((s) => s?.id === args.where.id) as any;
+        }) as any
       );
       vi.mocked(prisma.tradeInSubmission.update).mockResolvedValue({} as any);
 

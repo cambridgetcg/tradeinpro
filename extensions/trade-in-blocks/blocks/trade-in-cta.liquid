@@ -33,12 +33,15 @@
   {% endif %}
 </div>
 
-<link rel="stylesheet" href="{{ 'trade-in.css' | asset_url }}">
-
 {% schema %}
 {
   "name": "Trade-In CTA",
   "target": "section",
+  "stylesheet": "trade-in.css",
+  "enabled_on": {
+    "templates": ["*"],
+    "groups": ["body", "aside", "footer"]
+  },
   "settings": [
     {
       "type": "text",

@@ -20,8 +20,26 @@ export interface PayoutSearchParams {
   limit?: number;
 }
 
+export type PayoutWithRelations = Prisma.PayoutGetPayload<{
+  include: {
+    submission: {
+      select: {
+        submissionNumber: true;
+        status: true;
+      };
+    };
+    customer: {
+      select: {
+        email: true;
+        firstName: true;
+        lastName: true;
+      };
+    };
+  };
+}>;
+
 export interface PayoutSearchResult {
-  payouts: Awaited<ReturnType<typeof prisma.payout.findMany>>;
+  payouts: PayoutWithRelations[];
   pagination: {
     page: number;
     limit: number;
