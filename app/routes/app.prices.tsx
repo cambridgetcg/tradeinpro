@@ -35,6 +35,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Parse search params
   const search = url.searchParams.get("search") || "";
+  const releaseFilter = url.searchParams.get("release") || "";
   const setFilter = url.searchParams.get("set") || "";
   const sort = (url.searchParams.get("sort") as "name" | "card-number" | "price-asc" | "price-desc" | "updated") || "card-number";
   const page = parseInt(url.searchParams.get("page") || "1");
@@ -52,7 +53,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       { name: { contains: search, mode: "insensitive" } },
       { cardId: { contains: search, mode: "insensitive" } },
       { cardNumber: { contains: search, mode: "insensitive" } },
+      { fullCardNumber: { contains: search, mode: "insensitive" } },
     ];
+  }
+
+  if (releaseFilter) {
+    where.releaseSet = releaseFilter.toUpperCase();
   }
 
   if (setFilter) {
@@ -77,12 +83,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       break;
     case "card-number":
     default:
-      orderBy = [{ setCode: "asc" }, { cardNumber: "asc" }];
+      orderBy = [{ releaseSet: "asc" }, { fullCardNumber: "asc" }];
       break;
   }
 
   // Query CardPriceV2 directly
-  const [prices, total, sets, stats] = await Promise.all([
+  const [prices, total, releases, sets, stats] = await Promise.all([
     prisma.cardPriceV2.findMany({
       where,
       orderBy,
@@ -104,6 +110,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       },
     }),
     prisma.cardPriceV2.count({ where }),
+    prisma.cardPriceV2.groupBy({
+      by: ["releaseSet"],
+      where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+      orderBy: { releaseSet: "asc" },
+    }),
     prisma.cardPriceV2.groupBy({
       by: ["setCode"],
       where: { game: "onepiece", tradeinPriceGbp: { not: null } },
@@ -140,6 +151,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       total,
       totalPages: Math.ceil(total / limit),
     },
+    releases: releases.map((r: { releaseSet: string | null }) => r.releaseSet).filter((r: string | null): r is string => r !== null),
     sets: sets.map((s: { setCode: string | null }) => s.setCode).filter((s: string | null): s is string => s !== null),
     stats: {
       totalPrices: stats._count,
@@ -147,6 +159,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     filters: {
       search,
+      release: releaseFilter,
       set: setFilter,
       sort,
     },
@@ -181,6 +194,7 @@ export default function Prices() {
   const {
     prices,
     pagination,
+    releases,
     sets,
     stats,
     filters,
@@ -191,6 +205,7 @@ export default function Prices() {
 
   // Local filter state
   const [searchValue, setSearchValue] = useState(filters.search);
+  const [releaseFilter, setReleaseFilter] = useState(filters.release);
   const [setFilter, setSetFilter] = useState(filters.set);
 
   const handleSearch = useCallback(() => {
@@ -203,6 +218,21 @@ export default function Prices() {
     params.set("page", "1");
     setSearchParams(params);
   }, [searchValue, searchParams, setSearchParams]);
+
+  const handleReleaseChange = useCallback(
+    (value: string) => {
+      setReleaseFilter(value);
+      const params = new URLSearchParams(searchParams);
+      if (value) {
+        params.set("release", value);
+      } else {
+        params.delete("release");
+      }
+      params.set("page", "1");
+      setSearchParams(params);
+    },
+    [searchParams, setSearchParams]
+  );
 
   const handleSetChange = useCallback(
     (value: string) => {
@@ -241,6 +271,11 @@ export default function Prices() {
     singular: "card",
     plural: "cards",
   };
+
+  const releaseOptions = [
+    { label: "All Releases", value: "" },
+    ...releases.map((r: string) => ({ label: r.toUpperCase(), value: r })),
+  ];
 
   const setOptions = [
     { label: "All Sets", value: "" },
@@ -327,10 +362,25 @@ export default function Prices() {
       }}
       onClearAll={() => {
         setSearchValue("");
+        setReleaseFilter("");
         setSetFilter("");
         setSearchParams(new URLSearchParams());
       }}
       filters={[
+        {
+          key: "release",
+          label: "Release",
+          filter: (
+            <Select
+              label=""
+              labelHidden
+              options={releaseOptions}
+              value={releaseFilter}
+              onChange={handleReleaseChange}
+            />
+          ),
+          shortcut: true,
+        },
         {
           key: "set",
           label: "Set",
