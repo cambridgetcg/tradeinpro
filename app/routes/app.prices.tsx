@@ -169,9 +169,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 
 // Helper to format GBP price
-function formatGbp(value: number | null): string {
+function formatGbp(value: number | null, roundDown = false): string {
   if (value === null) return "—";
-  return `£${value.toFixed(2)}`;
+  const displayValue = roundDown ? Math.floor(value) : value;
+  return `£${displayValue.toFixed(2)}`;
 }
 
 // Price type from loader
@@ -330,7 +331,7 @@ export default function Prices() {
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Text variant="bodyMd" fontWeight="semibold" as="span">
-          {formatGbp(price.tradeinPrice)}
+          {formatGbp(price.tradeinPrice, true)}
         </Text>
       </IndexTable.Cell>
     </IndexTable.Row>
