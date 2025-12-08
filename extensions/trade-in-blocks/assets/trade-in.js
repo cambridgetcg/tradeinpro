@@ -18,6 +18,8 @@
     maxQuantity: 99,
     storeCreditBonus: 0.1, // 10%
     defaultImagePlaceholder: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 63 88' fill='%23e5e7eb'%3E%3Crect width='63' height='88' rx='4'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='8'%3ENo Image%3C/text%3E%3C/svg%3E",
+    cartStorageKey: "tradein_cart",
+    cartExpiryHours: 72, // Cart expires after 72 hours
   };
 
   const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
@@ -368,7 +370,7 @@
     elements.browseGrid.innerHTML = state.browseResults
       .map(
         (card) => `
-      <button type="button" class="trade-in-card" data-browse-card='${JSON.stringify(card).replace(/'/g, "&#39;")}'>
+      <div class="trade-in-card" data-browse-card='${JSON.stringify(card).replace(/'/g, "&#39;")}'>
         <div class="trade-in-card__image">
           <img src="${card.imageUrl || CONFIG.defaultImagePlaceholder}" alt="${escapeHtml(card.name)}" loading="lazy" onerror="this.src='${CONFIG.defaultImagePlaceholder}'">
         </div>
@@ -377,28 +379,74 @@
           <span class="trade-in-card__set">${escapeHtml(card.setCode || "")}${card.variantType ? ` - ${escapeHtml(card.variantType)}` : ""}</span>
           <span class="trade-in-card__price">${formatMoney(card.prices.tradein.NM)}</span>
         </div>
-      </button>
+        <div class="trade-in-card__actions">
+          <button type="button" class="trade-in-card__quick-add" data-quick-add title="Quick add as NM">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+            <span>NM</span>
+          </button>
+          <button type="button" class="trade-in-card__more" data-open-modal title="More options">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+      </div>
     `
       )
       .join("");
 
-    // Add click handlers
-    elements.browseGrid.querySelectorAll("[data-browse-card]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const card = JSON.parse(btn.dataset.browseCard);
-        // Transform browse card format to search card format
-        openConditionModal({
-          id: card.cardId,
-          cardName: card.name,
-          setName: card.setCode || "Unknown",
-          setCode: card.setCode,
-          variant: card.variantType,
-          rarity: card.rarity,
-          imageUrl: card.imageUrl,
-          prices: card.prices.tradein,
+    // Add click handlers for quick-add
+    elements.browseGrid.querySelectorAll("[data-browse-card]").forEach((cardEl) => {
+      const card = JSON.parse(cardEl.dataset.browseCard);
+      const cardForCart = {
+        id: card.cardId,
+        cardName: card.name,
+        setName: card.setCode || "Unknown",
+        setCode: card.setCode,
+        variant: card.variantType,
+        rarity: card.rarity,
+        imageUrl: card.imageUrl,
+        prices: card.prices.tradein,
+      };
+
+      // Quick add button - adds as NM
+      const quickAddBtn = cardEl.querySelector("[data-quick-add]");
+      if (quickAddBtn) {
+        quickAddBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          addToCart(cardForCart, "NM", 1);
+          showQuickAddFeedback(quickAddBtn);
         });
-      });
+      }
+
+      // More options button - opens modal
+      const moreBtn = cardEl.querySelector("[data-open-modal]");
+      if (moreBtn) {
+        moreBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openConditionModal(cardForCart);
+        });
+      }
+
+      // Clicking on card image also opens modal
+      const imageEl = cardEl.querySelector(".trade-in-card__image");
+      if (imageEl) {
+        imageEl.addEventListener("click", () => {
+          openConditionModal(cardForCart);
+        });
+        imageEl.style.cursor = "pointer";
+      }
     });
+  }
+
+  function showQuickAddFeedback(button) {
+    // Visual feedback for quick add
+    const originalHtml = button.innerHTML;
+    button.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg><span>Added!</span>`;
+    button.classList.add("trade-in-card__quick-add--success");
+
+    setTimeout(() => {
+      button.innerHTML = originalHtml;
+      button.classList.remove("trade-in-card__quick-add--success");
+    }, 1500);
   }
 
   function renderBrowsePagination() {
@@ -633,6 +681,12 @@
     renderCart();
     updateTotals();
     updateFormState();
+    // Persist cart to localStorage
+    if (state.cart.length > 0) {
+      saveCartToStorage();
+    } else {
+      clearCartStorage();
+    }
   }
 
   function renderCart() {
@@ -928,6 +982,104 @@
   }
 
   // ============================================================================
+  // localStorage Cart Persistence
+  // ============================================================================
+
+  function saveCartToStorage() {
+    try {
+      const cartData = {
+        items: state.cart,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(CONFIG.cartStorageKey, JSON.stringify(cartData));
+    } catch (error) {
+      console.warn("Could not save cart to localStorage:", error);
+    }
+  }
+
+  function loadCartFromStorage() {
+    try {
+      const stored = localStorage.getItem(CONFIG.cartStorageKey);
+      if (!stored) return null;
+
+      const cartData = JSON.parse(stored);
+
+      // Check if cart has expired
+      const expiryMs = CONFIG.cartExpiryHours * 60 * 60 * 1000;
+      if (Date.now() - cartData.savedAt > expiryMs) {
+        clearCartStorage();
+        return null;
+      }
+
+      return cartData.items || [];
+    } catch (error) {
+      console.warn("Could not load cart from localStorage:", error);
+      return null;
+    }
+  }
+
+  function clearCartStorage() {
+    try {
+      localStorage.removeItem(CONFIG.cartStorageKey);
+    } catch (error) {
+      console.warn("Could not clear cart from localStorage:", error);
+    }
+  }
+
+  function showCartRecoveryPrompt(itemCount) {
+    // Only show if we have a banner element to display in
+    const form = elements.form;
+    if (!form) return;
+
+    // Check if prompt already exists
+    if (form.querySelector(".trade-in-cart-recovery")) return;
+
+    const prompt = document.createElement("div");
+    prompt.className = "trade-in-cart-recovery";
+    prompt.innerHTML = `
+      <div class="trade-in-cart-recovery__content">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="trade-in-cart-recovery__icon">
+          <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+        </svg>
+        <span class="trade-in-cart-recovery__text">
+          You have <strong>${itemCount}</strong> item${itemCount !== 1 ? "s" : ""} in your saved cart
+        </span>
+        <div class="trade-in-cart-recovery__actions">
+          <button type="button" class="trade-in-cart-recovery__btn trade-in-cart-recovery__btn--restore" data-restore-cart>
+            Restore Cart
+          </button>
+          <button type="button" class="trade-in-cart-recovery__btn trade-in-cart-recovery__btn--dismiss" data-dismiss-cart>
+            Start Fresh
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Insert at top of form
+    const header = form.querySelector(".trade-in-form__header");
+    if (header) {
+      header.after(prompt);
+    } else {
+      form.prepend(prompt);
+    }
+
+    // Add event handlers
+    prompt.querySelector("[data-restore-cart]").addEventListener("click", () => {
+      const savedCart = loadCartFromStorage();
+      if (savedCart && savedCart.length > 0) {
+        state.cart = savedCart;
+        updateCart();
+      }
+      prompt.remove();
+    });
+
+    prompt.querySelector("[data-dismiss-cart]").addEventListener("click", () => {
+      clearCartStorage();
+      prompt.remove();
+    });
+  }
+
+  // ============================================================================
   // Event Handlers Setup
   // ============================================================================
 
@@ -1031,6 +1183,15 @@
     }
 
     setupEventHandlers();
+
+    // Check for saved cart in localStorage
+    const savedCart = loadCartFromStorage();
+    if (savedCart && savedCart.length > 0) {
+      // Show recovery prompt instead of auto-loading
+      const itemCount = savedCart.reduce((sum, item) => sum + item.quantity, 0);
+      showCartRecoveryPrompt(itemCount);
+    }
+
     updateCart();
 
     // Initialize browse mode if section exists

@@ -54,9 +54,11 @@ export interface CardBrowseResponse {
   page: number;
   totalPages: number;
   sets: string[];
+  releases: string[];
   filters: {
     query: string | null;
     setCode: string | null;
+    releaseSet: string | null;
     minPrice: number | null;
     page: number;
     limit: number;
@@ -75,6 +77,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Extract query parameters
   const query = sanitizeString(url.searchParams.get("q") || "", MAX_QUERY_LENGTH);
   const setCode = sanitizeString(url.searchParams.get("set") || "", 20) || undefined;
+  const releaseSet = sanitizeString(url.searchParams.get("release") || "", 20) || undefined;
   const page = Math.max(1, parsePositiveInt(url.searchParams.get("page"), 1));
   const limit = Math.min(
     parsePositiveInt(url.searchParams.get("limit"), DEFAULT_RESULTS),
@@ -108,6 +111,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       baseWhere.setCode = setCode.toUpperCase();
     }
 
+    // Add release filter (e.g., OP07, ST01)
+    if (releaseSet) {
+      baseWhere.releaseSet = releaseSet.toUpperCase();
+    }
+
     // Add minimum price filter (in GBP, convert to compare)
     if (minPrice) {
       const minGbp = minPrice / 100; // Convert pence to pounds
@@ -135,7 +143,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     // Get total count and paginated results
-    const [total, cards, allSets] = await Promise.all([
+    const [total, cards, allSets, allReleases] = await Promise.all([
       prisma.cardPriceV2.count({ where: baseWhere }),
       prisma.cardPriceV2.findMany({
         where: baseWhere,
@@ -146,6 +154,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           cardId: true,
           name: true,
           setCode: true,
+          releaseSet: true,
           cardNumber: true,
           variantType: true,
           rarity: true,
@@ -159,6 +168,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
         by: ["setCode"],
         where: { game: "onepiece", tradeinPriceGbp: { not: null } },
         orderBy: { setCode: "asc" },
+      }),
+      // Get unique releases for filter dropdown
+      prisma.cardPriceV2.groupBy({
+        by: ["releaseSet"],
+        where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+        orderBy: { releaseSet: "asc" },
       }),
     ]);
 
@@ -203,9 +218,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       page,
       totalPages: Math.ceil(total / limit),
       sets: allSets.map((s: { setCode: string | null }) => s.setCode).filter((s: string | null): s is string => s !== null),
+      releases: allReleases.map((r: { releaseSet: string | null }) => r.releaseSet).filter((r: string | null): r is string => r !== null),
       filters: {
         query: query || null,
         setCode: setCode || null,
+        releaseSet: releaseSet || null,
         minPrice: minPrice || null,
         page,
         limit,
