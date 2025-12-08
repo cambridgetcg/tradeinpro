@@ -24,8 +24,17 @@ const DEFAULT_RESULTS = 24;
 const MIN_QUERY_LENGTH = 2;
 const MAX_QUERY_LENGTH = 100;
 
-// CDN base URL for card images (configure via env var in production)
-const IMAGE_CDN_BASE = process.env.CARD_IMAGE_CDN_URL || "/card-images/";
+// OPTCG API base URL for card images (free, public API)
+const OPTCG_IMAGE_BASE = "https://www.optcgapi.com/media/static/Card_Images/";
+
+/**
+ * Generate OPTCG image URL from card data
+ * Format: https://www.optcgapi.com/media/static/Card_Images/{setCode}-{cardNumber}.jpg
+ */
+function getOptcgImageUrl(setCode: string | null, cardNumber: string | null): string | null {
+  if (!setCode || !cardNumber) return null;
+  return `${OPTCG_IMAGE_BASE}${setCode}-${cardNumber}.jpg`;
+}
 
 export interface CardBrowseResult {
   cardId: string;
@@ -203,7 +212,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         cardNumber: card.cardNumber,
         variantType: card.variantType,
         rarity: card.rarity,
-        imageUrl: card.imageUrl ? `${IMAGE_CDN_BASE}${card.imageUrl}` : null,
+        imageUrl: getOptcgImageUrl(card.setCode, card.cardNumber),
         prices: {
           market: marketPrice,
           tradein: tradeinPrices,
