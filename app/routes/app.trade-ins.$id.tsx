@@ -52,6 +52,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   type SubmissionContext = Parameters<typeof attemptTransition>[0];
   await authenticate.admin(request);
 
+  console.log('[app.trade-ins.$id] Loading submission:', params.id);
+
   const submission = await prisma.tradeInSubmission.findUnique({
     where: { id: params.id },
     include: {
@@ -78,8 +80,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   });
 
   if (!submission) {
+    console.log('[app.trade-ins.$id] Submission not found:', params.id);
     throw new Response("Submission not found", { status: 404 });
   }
+
+  console.log('[app.trade-ins.$id] Found submission:', submission.submissionNumber, 'status:', submission.status);
 
   // Get settings for this shop
   const settings = await prisma.tradeInSettings.findFirst();
@@ -113,6 +118,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     acc[status] = { allowed: result.allowed, reason: result.reason };
     return acc;
   }, {} as Record<string, { allowed: boolean; reason?: string }>);
+
+  console.log('[app.trade-ins.$id] Returning data for submission:', submission.submissionNumber, 'items:', submission.items.length);
 
   return {
     submission: {
