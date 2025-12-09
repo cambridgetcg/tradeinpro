@@ -1354,3 +1354,15 @@ function SummaryCard({
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
+
+export function ErrorBoundary() {
+  return (
+    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
+      <h1 style={{ color: "#dc2626" }}>Error Loading Submission</h1>
+      <p>Something went wrong while loading this trade-in submission.</p>
+      <a href="/app/trade-ins" style={{ color: "#3b82f6" }}>
+        ← Back to Submissions
+      </a>
+    </div>
+  );
+}
