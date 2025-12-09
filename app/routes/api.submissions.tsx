@@ -19,6 +19,7 @@ import {
 import {
   createSubmission,
   getCustomerSubmissions,
+  submitSubmission,
   type CreateItemInput,
 } from "../lib/submissions.server";
 import { Condition, PayoutType, type ConditionType, type PayoutTypeValue } from "../lib/constants";
@@ -129,10 +130,14 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    // Auto-submit the submission (changes status from DRAFT to SUBMITTED)
+    // This makes it visible in the admin queue immediately
+    const submittedSubmission = await submitSubmission(result.submission.id);
+
     return jsonResponse(
       {
         success: true,
-        submission: formatSubmissionForResponse(result.submission),
+        submission: formatSubmissionForResponse(submittedSubmission),
       },
       201
     );
