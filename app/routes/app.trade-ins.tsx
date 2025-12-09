@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, Link, useSearchParams, useNavigate } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -188,6 +189,7 @@ export default function TradeIns() {
     useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const shopify = useAppBridge();
 
   const handleStatusFilter = (status: string | null) => {
     const params = new URLSearchParams(searchParams);
@@ -467,7 +469,8 @@ export default function TradeIns() {
                 key={submission.id}
                 onClick={() => {
                   console.log('[trade-ins] Navigating to submission:', submission.id);
-                  navigate(`/app/trade-ins/${submission.id}`);
+                  // Use window.location for full page navigation to preserve App Bridge context
+                  window.location.href = `/app/trade-ins/${submission.id}`;
                 }}
                 style={{
                   display: "grid",
