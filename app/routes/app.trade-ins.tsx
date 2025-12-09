@@ -1,6 +1,5 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, Link, useSearchParams, useNavigate } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -11,6 +10,7 @@ import {
   type SubmissionStatusType,
   formatPrice,
 } from "../lib/constants";
+import "../styles/admin-trade-ins.css";
 
 const ITEMS_PER_PAGE = 20;
 
@@ -189,7 +189,6 @@ export default function TradeIns() {
     useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const shopify = useAppBridge();
 
   const handleStatusFilter = (status: string | null) => {
     const params = new URLSearchParams(searchParams);
@@ -249,128 +248,47 @@ export default function TradeIns() {
   ];
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-      }}
-    >
+    <div className="admin-trade-ins">
       {/* Header */}
-      <div
-        style={{
-          marginBottom: "24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div className="admin-trade-ins__header">
         <div>
-          <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 600 }}>
-            Trade-In Submissions
-          </h1>
-          <p style={{ margin: "8px 0 0", color: "#6b7280" }}>
-            {pagination.totalCount} submission
-            {pagination.totalCount !== 1 ? "s" : ""}
+          <h1 className="admin-trade-ins__title">Trade-In Submissions</h1>
+          <p className="admin-trade-ins__subtitle">
+            {pagination.totalCount} submission{pagination.totalCount !== 1 ? "s" : ""}
           </p>
         </div>
-        <Link
-          to="/app"
-          style={{
-            color: "#3b82f6",
-            textDecoration: "none",
-            fontSize: "14px",
-          }}
-        >
+        <Link to="/app" className="admin-trade-ins__back-link">
           ← Back to Dashboard
         </Link>
       </div>
 
-      {/* Filters Bar */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          marginBottom: "16px",
-        }}
-      >
+      {/* Filters Card */}
+      <div className="admin-card admin-card--flush" style={{ marginBottom: 16 }}>
         {/* Status Tabs */}
-        <div
-          style={{
-            display: "flex",
-            borderBottom: "1px solid #e5e7eb",
-            overflow: "auto",
-          }}
-        >
+        <div className="admin-tabs">
           {statusTabs.map((tab) => (
             <button
               key={tab.key || "all"}
               onClick={() => handleStatusFilter(tab.key)}
-              style={{
-                padding: "12px 20px",
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: filters.status === tab.key ? "#3b82f6" : "#6b7280",
-                borderBottom:
-                  filters.status === tab.key ? "2px solid #3b82f6" : "2px solid transparent",
-                marginBottom: "-1px",
-                whiteSpace: "nowrap",
-              }}
+              className={`admin-tabs__tab ${filters.status === tab.key ? "admin-tabs__tab--active" : ""}`}
             >
               {tab.label}
-              <span
-                style={{
-                  marginLeft: "8px",
-                  padding: "2px 8px",
-                  background: filters.status === tab.key ? "#dbeafe" : "#f3f4f6",
-                  borderRadius: "10px",
-                  fontSize: "12px",
-                  color: filters.status === tab.key ? "#1d4ed8" : "#6b7280",
-                }}
-              >
-                {tab.count}
-              </span>
+              <span className="admin-tabs__badge">{tab.count}</span>
             </button>
           ))}
         </div>
 
         {/* Search and Sort */}
-        <div
-          style={{
-            padding: "12px 16px",
-            display: "flex",
-            gap: "16px",
-            alignItems: "center",
-          }}
-        >
-          <form onSubmit={handleSearch} style={{ flex: 1, display: "flex", gap: "8px" }}>
+        <div className="admin-filters">
+          <form onSubmit={handleSearch} className="admin-search">
             <input
               type="text"
               name="search"
               placeholder="Search by submission #, customer name, or email..."
               defaultValue={filters.search || ""}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                fontSize: "14px",
-              }}
+              className="admin-search__input"
             />
-            <button
-              type="submit"
-              style={{
-                padding: "8px 16px",
-                background: "#f3f4f6",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "14px",
-              }}
-            >
+            <button type="submit" className="admin-btn admin-btn--secondary">
               Search
             </button>
             {filters.search && (
@@ -381,14 +299,7 @@ export default function TradeIns() {
                   params.delete("search");
                   setSearchParams(params);
                 }}
-                style={{
-                  padding: "8px 16px",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  color: "#ef4444",
-                }}
+                className="admin-btn admin-btn--link"
               >
                 Clear
               </button>
@@ -398,13 +309,7 @@ export default function TradeIns() {
           <select
             value={filters.sort}
             onChange={(e) => handleSort(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              border: "1px solid #e5e7eb",
-              borderRadius: "6px",
-              fontSize: "14px",
-              background: "#fff",
-            }}
+            className="admin-select"
           >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
@@ -416,50 +321,25 @@ export default function TradeIns() {
       </div>
 
       {/* Submissions Table */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          overflow: "hidden",
-        }}
-      >
+      <div className="admin-card admin-card--flush">
         {submissions.length === 0 ? (
-          <div
-            style={{
-              padding: "60px 20px",
-              textAlign: "center",
-              color: "#6b7280",
-            }}
-          >
-            <p style={{ margin: 0, fontSize: "16px" }}>No submissions found</p>
-            <p style={{ margin: "8px 0 0", fontSize: "14px" }}>
+          <div className="admin-empty">
+            <p className="admin-empty__title">No submissions found</p>
+            <p className="admin-empty__desc">
               {filters.search || filters.status
                 ? "Try adjusting your filters"
                 : "Submissions will appear here once customers submit trade-ins"}
             </p>
           </div>
         ) : (
-          <>
+          <div className="admin-table">
             {/* Table Header */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1.5fr 1fr 1fr 100px 100px 80px",
-                padding: "12px 20px",
-                background: "#f9fafb",
-                borderBottom: "1px solid #e5e7eb",
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "#6b7280",
-                textTransform: "uppercase",
-              }}
-            >
+            <div className="admin-table__header">
               <div>Submission</div>
               <div>Customer</div>
               <div>Status</div>
-              <div style={{ textAlign: "right" }}>Value</div>
-              <div style={{ textAlign: "center" }}>Items</div>
+              <div className="admin-table__cell--right">Value</div>
+              <div className="admin-table__cell--center">Items</div>
               <div></div>
             </div>
 
@@ -468,154 +348,103 @@ export default function TradeIns() {
               <div
                 key={submission.id}
                 onClick={() => {
-                  console.log('[trade-ins] Navigating to submission:', submission.id);
-                  // Use React Router navigate - App Bridge should handle embedded navigation
+                  console.log("[trade-ins] Navigating to submission:", submission.id);
                   navigate(`/app/trade-ins/${submission.id}`);
                 }}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.5fr 1fr 1fr 100px 100px 80px",
-                  padding: "16px 20px",
-                  borderBottom: "1px solid #e5e7eb",
-                  alignItems: "center",
-                  cursor: "pointer",
-                  transition: "background 0.15s",
-                  textDecoration: "none",
-                  color: "inherit",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                className="admin-table__row"
               >
-                  {/* Submission Info */}
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <strong style={{ fontFamily: "monospace", fontSize: "14px" }}>
-                        {submission.submissionNumber}
-                      </strong>
+                {/* Submission Info */}
+                <div className="admin-table__cell">
+                  <div className="admin-submission-info">
+                    <span className="admin-submission-info__number">
+                      {submission.submissionNumber}
                       {submission.daysSinceReceived !== null &&
                         submission.daysSinceReceived > 3 &&
                         ["RECEIVED", "GRADING"].includes(submission.status) && (
-                          <span
-                            style={{
-                              background: "#fef3c7",
-                              color: "#b45309",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              fontWeight: 500,
-                            }}
-                          >
+                          <span className="admin-submission-info__alert">
                             {submission.daysSinceReceived}d
                           </span>
                         )}
-                    </div>
-                    <div style={{ color: "#9ca3af", fontSize: "12px", marginTop: "4px" }}>
+                    </span>
+                    <span className="admin-submission-info__date">
                       {formatDate(submission.createdAt)}
-                    </div>
+                    </span>
                   </div>
+                </div>
 
-                  {/* Customer */}
-                  <div>
-                    <div style={{ fontSize: "14px" }}>{submission.customerName}</div>
-                    <div style={{ color: "#9ca3af", fontSize: "12px" }}>
+                {/* Customer */}
+                <div className="admin-table__cell">
+                  <div className="admin-customer-info">
+                    <span className="admin-customer-info__name">
+                      {submission.customerName}
+                    </span>
+                    <span className="admin-customer-info__payout">
                       {submission.payoutType.replace("_", " ")}
-                    </div>
+                    </span>
                   </div>
+                </div>
 
-                  {/* Status */}
-                  <div>
-                    <StatusBadge status={submission.status} />
-                  </div>
+                {/* Status */}
+                <div className="admin-table__cell">
+                  <StatusBadge status={submission.status} />
+                </div>
 
-                  {/* Value */}
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 600, fontSize: "14px" }}>
+                {/* Value */}
+                <div className="admin-table__cell admin-table__cell--right">
+                  <div className="admin-value">
+                    <div className="admin-value__current">
                       {formatPrice(submission.finalTotal ?? submission.quotedTotal)}
                     </div>
                     {submission.finalTotal !== null &&
                       submission.finalTotal !== submission.quotedTotal && (
-                        <div
-                          style={{
-                            color: "#9ca3af",
-                            fontSize: "12px",
-                            textDecoration: "line-through",
-                          }}
-                        >
+                        <div className="admin-value__original">
                           {formatPrice(submission.quotedTotal)}
                         </div>
                       )}
                   </div>
+                </div>
 
-                  {/* Items */}
-                  <div style={{ textAlign: "center", color: "#6b7280", fontSize: "14px" }}>
-                    {submission.itemCount}
-                  </div>
+                {/* Items */}
+                <div className="admin-table__cell admin-table__cell--center">
+                  {submission.itemCount}
+                </div>
 
-                  {/* Action */}
-                  <div style={{ textAlign: "right" }}>
-                    <span style={{ color: "#3b82f6", fontSize: "14px" }}>View →</span>
-                  </div>
+                {/* Action */}
+                <div className="admin-table__cell admin-table__cell--right">
+                  <span className="admin-view-link">View →</span>
+                </div>
               </div>
             ))}
-          </>
+          </div>
         )}
       </div>
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div
-          style={{
-            marginTop: "16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ color: "#6b7280", fontSize: "14px" }}>
+        <div className="admin-pagination">
+          <div className="admin-pagination__info">
             Showing {(pagination.page - 1) * ITEMS_PER_PAGE + 1} -{" "}
             {Math.min(pagination.page * ITEMS_PER_PAGE, pagination.totalCount)} of{" "}
             {pagination.totalCount}
           </div>
 
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="admin-pagination__controls">
             <button
               disabled={!pagination.hasPrevPage}
               onClick={() => handlePageChange(pagination.page - 1)}
-              style={{
-                padding: "8px 16px",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                background: pagination.hasPrevPage ? "#fff" : "#f9fafb",
-                cursor: pagination.hasPrevPage ? "pointer" : "not-allowed",
-                fontSize: "14px",
-                color: pagination.hasPrevPage ? "#111827" : "#9ca3af",
-              }}
+              className="admin-btn admin-btn--secondary"
             >
               Previous
             </button>
 
-            <span
-              style={{
-                padding: "8px 16px",
-                fontSize: "14px",
-                color: "#6b7280",
-              }}
-            >
+            <span className="admin-pagination__page">
               Page {pagination.page} of {pagination.totalPages}
             </span>
 
             <button
               disabled={!pagination.hasNextPage}
               onClick={() => handlePageChange(pagination.page + 1)}
-              style={{
-                padding: "8px 16px",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                background: pagination.hasNextPage ? "#fff" : "#f9fafb",
-                cursor: pagination.hasNextPage ? "pointer" : "not-allowed",
-                fontSize: "14px",
-                color: pagination.hasNextPage ? "#111827" : "#9ca3af",
-              }}
+              className="admin-btn admin-btn--secondary"
             >
               Next
             </button>
@@ -627,36 +456,12 @@ export default function TradeIns() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    DRAFT: { bg: "#f3f4f6", text: "#6b7280" },
-    SUBMITTED: { bg: "#dbeafe", text: "#1d4ed8" },
-    IN_TRANSIT: { bg: "#dbeafe", text: "#1d4ed8" },
-    RECEIVED: { bg: "#fef3c7", text: "#b45309" },
-    GRADING: { bg: "#fef3c7", text: "#b45309" },
-    PENDING_APPROVAL: { bg: "#ede9fe", text: "#7c3aed" },
-    APPROVED: { bg: "#d1fae5", text: "#059669" },
-    COMPLETED: { bg: "#d1fae5", text: "#059669" },
-    CANCELLED: { bg: "#fee2e2", text: "#dc2626" },
-    RETURNED: { bg: "#fee2e2", text: "#dc2626" },
-  };
-
-  const color = colors[status] || colors.DRAFT;
   const label =
     SubmissionStatusLabels[status as keyof typeof SubmissionStatusLabels] ||
     status.replace(/_/g, " ");
 
   return (
-    <span
-      style={{
-        background: color.bg,
-        color: color.text,
-        padding: "4px 10px",
-        borderRadius: "4px",
-        fontSize: "12px",
-        fontWeight: 500,
-        display: "inline-block",
-      }}
-    >
+    <span className={`admin-badge admin-badge--${status.toLowerCase()}`}>
       {label}
     </span>
   );

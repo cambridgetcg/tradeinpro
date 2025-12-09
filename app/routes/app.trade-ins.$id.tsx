@@ -22,6 +22,7 @@ import {
   formatPrice,
   isConditionWorse,
 } from "../lib/constants";
+import "../styles/admin-trade-ins.css";
 
 interface ItemData {
   id: string;
@@ -496,68 +497,23 @@ export default function TradeInDetail() {
     submission.status === SubmissionStatus.RECEIVED ||
     submission.status === SubmissionStatus.GRADING;
 
-  const statusColors: Record<string, { bg: string; text: string }> = {
-    DRAFT: { bg: "#f3f4f6", text: "#6b7280" },
-    SUBMITTED: { bg: "#dbeafe", text: "#1d4ed8" },
-    IN_TRANSIT: { bg: "#dbeafe", text: "#1d4ed8" },
-    RECEIVED: { bg: "#fef3c7", text: "#b45309" },
-    GRADING: { bg: "#fef3c7", text: "#b45309" },
-    PENDING_APPROVAL: { bg: "#ede9fe", text: "#7c3aed" },
-    APPROVED: { bg: "#d1fae5", text: "#059669" },
-    COMPLETED: { bg: "#d1fae5", text: "#059669" },
-    CANCELLED: { bg: "#fee2e2", text: "#dc2626" },
-    RETURNED: { bg: "#fee2e2", text: "#dc2626" },
-  };
-
-  const itemStatusColors: Record<string, { bg: string; text: string }> = {
-    PENDING: { bg: "#f3f4f6", text: "#6b7280" },
-    VERIFIED: { bg: "#d1fae5", text: "#059669" },
-    ADJUSTED: { bg: "#fef3c7", text: "#b45309" },
-    REJECTED: { bg: "#fee2e2", text: "#dc2626" },
-  };
-
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-        maxWidth: "1200px",
-      }}
-    >
+    <div className="admin-trade-ins">
       {/* Header */}
-      <div
-        style={{
-          marginBottom: "24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-        }}
-      >
+      <div className="admin-trade-ins__header">
         <div>
-          <Link
-            to="/app/trade-ins"
-            style={{ color: "#6b7280", textDecoration: "none", fontSize: "14px" }}
-          >
+          <Link to="/app/trade-ins" className="admin-trade-ins__back-link">
             ← Back to Submissions
           </Link>
-          <h1 style={{ margin: "8px 0 0", fontSize: "24px", fontWeight: 600 }}>
+          <h1 className="admin-trade-ins__title">
             Trade-In #{submission.submissionNumber}
           </h1>
-          <div style={{ display: "flex", gap: "12px", marginTop: "8px", alignItems: "center" }}>
-            <span
-              style={{
-                background: statusColors[submission.status]?.bg || "#f3f4f6",
-                color: statusColors[submission.status]?.text || "#6b7280",
-                padding: "4px 12px",
-                borderRadius: "4px",
-                fontSize: "13px",
-                fontWeight: 500,
-              }}
-            >
+          <div className="admin-header-meta">
+            <span className={`admin-badge admin-badge--${submission.status.toLowerCase()}`}>
               {SubmissionStatusLabels[submission.status as keyof typeof SubmissionStatusLabels] ||
                 submission.status}
             </span>
-            <span style={{ color: "#6b7280", fontSize: "14px" }}>
+            <span className="admin-header-meta__date">
               Created {formatDate(submission.createdAt)}
             </span>
           </div>
@@ -565,7 +521,7 @@ export default function TradeInDetail() {
 
         {/* Status Actions */}
         {validNextStatuses.length > 0 && (
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="admin-actions">
             {validNextStatuses.map((status) => {
               const isPrimary =
                 status === SubmissionStatus.APPROVED ||
@@ -578,6 +534,11 @@ export default function TradeInDetail() {
               const transitionResult = transitionResults[status];
               const isDisabled = !transitionResult?.allowed;
 
+              let btnClass = "admin-btn";
+              if (isPrimary) btnClass += " admin-btn--primary";
+              else if (isDestructive) btnClass += " admin-btn--danger";
+              else btnClass += " admin-btn--secondary";
+
               return (
                 <fetcher.Form method="post" key={status}>
                   <input type="hidden" name="intent" value="updateStatus" />
@@ -586,21 +547,7 @@ export default function TradeInDetail() {
                     type="submit"
                     disabled={isLoading || isDisabled}
                     title={isDisabled ? transitionResult.reason : undefined}
-                    style={{
-                      padding: "10px 20px",
-                      borderRadius: "6px",
-                      border: isPrimary ? "none" : "1px solid #e5e7eb",
-                      background: isPrimary
-                        ? "#000"
-                        : isDestructive
-                          ? "#fee2e2"
-                          : "#fff",
-                      color: isPrimary ? "#fff" : isDestructive ? "#dc2626" : "#111827",
-                      cursor: isDisabled ? "not-allowed" : "pointer",
-                      fontSize: "14px",
-                      fontWeight: 500,
-                      opacity: isDisabled ? 0.5 : 1,
-                    }}
+                    className={btnClass}
                   >
                     {SubmissionStatusLabels[status as keyof typeof SubmissionStatusLabels]}
                   </button>
@@ -611,18 +558,11 @@ export default function TradeInDetail() {
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px" }}>
+      <div className="admin-detail">
         {/* Main Content */}
-        <div>
+        <div className="admin-detail__main">
           {/* Summary Cards */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: "16px",
-              marginBottom: "24px",
-            }}
-          >
+          <div className="admin-summary-grid">
             <SummaryCard
               label="Quoted Total"
               value={formatPrice(submission.quotedTotal)}
@@ -647,26 +587,9 @@ export default function TradeInDetail() {
 
           {/* Grading Progress (if in grading mode) */}
           {isGradingMode && (
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: "8px",
-                border: "1px solid #e5e7eb",
-                padding: "20px",
-                marginBottom: "24px",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "16px",
-                }}
-              >
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
-                  Grading Progress
-                </h3>
+            <div className="admin-progress">
+              <div className="admin-progress__header">
+                <h3 className="admin-progress__title">Grading Progress</h3>
                 {gradingProgress.total - gradingProgress.graded > 0 && (
                   <fetcher.Form method="post">
                     <input type="hidden" name="intent" value="bulkGrade" />
@@ -674,14 +597,7 @@ export default function TradeInDetail() {
                     <button
                       type="submit"
                       disabled={isLoading}
-                      style={{
-                        padding: "8px 16px",
-                        background: "#f3f4f6",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                      }}
+                      className="admin-btn admin-btn--secondary admin-btn--sm"
                     >
                       Verify All Remaining
                     </button>
@@ -690,36 +606,24 @@ export default function TradeInDetail() {
               </div>
 
               {/* Progress Bar */}
-              <div
-                style={{
-                  height: "8px",
-                  background: "#f3f4f6",
-                  borderRadius: "4px",
-                  overflow: "hidden",
-                  marginBottom: "12px",
-                }}
-              >
+              <div className="admin-progress__bar">
                 <div
-                  style={{
-                    height: "100%",
-                    width: `${(gradingProgress.graded / gradingProgress.total) * 100}%`,
-                    background: "#10b981",
-                    transition: "width 0.3s",
-                  }}
+                  className="admin-progress__fill"
+                  style={{ width: `${(gradingProgress.graded / gradingProgress.total) * 100}%` }}
                 />
               </div>
 
-              <div style={{ display: "flex", gap: "24px", fontSize: "14px" }}>
-                <span style={{ color: "#6b7280" }}>
+              <div className="admin-progress__stats">
+                <span className="admin-progress__stat">
                   <strong>{gradingProgress.graded}</strong> / {gradingProgress.total} graded
                 </span>
-                <span style={{ color: "#059669" }}>
+                <span className="admin-progress__stat admin-progress__stat--verified">
                   {gradingProgress.verified} verified
                 </span>
-                <span style={{ color: "#b45309" }}>
+                <span className="admin-progress__stat admin-progress__stat--adjusted">
                   {gradingProgress.adjusted} adjusted
                 </span>
-                <span style={{ color: "#dc2626" }}>
+                <span className="admin-progress__stat admin-progress__stat--rejected">
                   {gradingProgress.rejected} rejected
                 </span>
               </div>
@@ -727,54 +631,26 @@ export default function TradeInDetail() {
           )}
 
           {/* Items List */}
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "8px",
-              border: "1px solid #e5e7eb",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: "16px 20px",
-                borderBottom: "1px solid #e5e7eb",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
-                Items ({submission.items.length})
-              </h3>
+          <div className="admin-items">
+            <div className="admin-card__header">
+              <h3 className="admin-card__title">Items ({submission.items.length})</h3>
             </div>
 
             {submission.items.map((item: ItemData) => (
-              <div
-                key={item.id}
-                style={{
-                  borderBottom: "1px solid #e5e7eb",
-                }}
-              >
+              <div key={item.id} className="admin-item">
                 {/* Item Row */}
                 <div
-                  style={{
-                    padding: "16px 20px",
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1fr 1fr 100px 80px",
-                    alignItems: "center",
-                    cursor: isGradingMode ? "pointer" : "default",
-                    background: expandedItem === item.id ? "#f9fafb" : "transparent",
-                  }}
+                  className={`admin-item__row ${expandedItem === item.id ? 'admin-item__row--expanded' : ''}`}
                   onClick={() =>
                     isGradingMode &&
                     setExpandedItem(expandedItem === item.id ? null : item.id)
                   }
+                  style={{ cursor: isGradingMode ? 'pointer' : 'default' }}
                 >
                   {/* Card Info */}
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{item.cardName}</div>
-                    <div style={{ color: "#6b7280", fontSize: "13px" }}>
+                  <div className="admin-item__info">
+                    <div className="admin-item__name">{item.cardName}</div>
+                    <div className="admin-item__meta">
                       {item.setName}
                       {item.variant && ` • ${item.variant}`}
                       {item.quantity > 1 && ` • Qty: ${item.quantity}`}
@@ -782,45 +658,29 @@ export default function TradeInDetail() {
                   </div>
 
                   {/* Condition */}
-                  <div>
-                    <div style={{ fontSize: "13px" }}>
-                      Claimed:{" "}
-                      <strong>
-                        {ConditionLabels[item.conditionClaimed as ConditionType]}
-                      </strong>
+                  <div className="admin-item__condition">
+                    <div className="admin-item__condition-claimed">
+                      Claimed: <strong>{ConditionLabels[item.conditionClaimed as ConditionType]}</strong>
                     </div>
                     {item.conditionActual && (
-                      <div
-                        style={{
-                          fontSize: "13px",
-                          color:
-                            item.conditionActual !== item.conditionClaimed
-                              ? "#b45309"
-                              : "#059669",
-                        }}
-                      >
-                        Actual:{" "}
-                        <strong>
-                          {ConditionLabels[item.conditionActual as ConditionType]}
-                        </strong>
+                      <div className={`admin-item__condition-actual ${
+                        item.conditionActual !== item.conditionClaimed
+                          ? 'admin-item__condition-actual--diff'
+                          : 'admin-item__condition-actual--same'
+                      }`}>
+                        Actual: <strong>{ConditionLabels[item.conditionActual as ConditionType]}</strong>
                       </div>
                     )}
                   </div>
 
                   {/* Price */}
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 600 }}>
+                  <div className="admin-item__price">
+                    <div className="admin-item__price-current">
                       {formatPrice(item.finalPrice ?? item.quotedPrice)}
                     </div>
                     {item.finalPrice !== null &&
                       item.finalPrice !== item.quotedPrice && (
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#9ca3af",
-                            textDecoration: "line-through",
-                          }}
-                        >
+                        <div className="admin-item__price-original">
                           {formatPrice(item.quotedPrice)}
                         </div>
                       )}
@@ -828,24 +688,14 @@ export default function TradeInDetail() {
 
                   {/* Status */}
                   <div>
-                    <span
-                      style={{
-                        background:
-                          itemStatusColors[item.status]?.bg || "#f3f4f6",
-                        color: itemStatusColors[item.status]?.text || "#6b7280",
-                        padding: "3px 8px",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: 500,
-                      }}
-                    >
+                    <span className={`admin-badge admin-badge--${item.status.toLowerCase()}`}>
                       {item.status}
                     </span>
                   </div>
 
                   {/* Expand */}
                   {isGradingMode && (
-                    <div style={{ textAlign: "right", color: "#6b7280" }}>
+                    <div className="admin-item__expand">
                       {expandedItem === item.id ? "▲" : "▼"}
                     </div>
                   )}
@@ -853,48 +703,20 @@ export default function TradeInDetail() {
 
                 {/* Expanded Grading Form */}
                 {isGradingMode && expandedItem === item.id && (
-                  <div
-                    style={{
-                      padding: "16px 20px",
-                      background: "#f9fafb",
-                      borderTop: "1px solid #e5e7eb",
-                    }}
-                  >
+                  <div className="admin-item__panel">
                     <fetcher.Form method="post">
                       <input type="hidden" name="intent" value="gradeItem" />
                       <input type="hidden" name="itemId" value={item.id} />
 
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 2fr auto",
-                          gap: "16px",
-                          alignItems: "end",
-                        }}
-                      >
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "13px",
-                              fontWeight: 500,
-                              marginBottom: "6px",
-                            }}
-                          >
+                      <div className="admin-item__form">
+                        <div className="admin-field">
+                          <label className="admin-field__label">
                             Actual Condition
                           </label>
                           <select
                             name="conditionActual"
-                            defaultValue={
-                              item.conditionActual || item.conditionClaimed
-                            }
-                            style={{
-                              width: "100%",
-                              padding: "8px 12px",
-                              border: "1px solid #e5e7eb",
-                              borderRadius: "6px",
-                              fontSize: "14px",
-                            }}
+                            defaultValue={item.conditionActual || item.conditionClaimed}
+                            className="admin-field__select"
                           >
                             {Object.entries(ConditionLabels).map(([key, label]) => (
                               <option key={key} value={key}>
@@ -904,15 +726,8 @@ export default function TradeInDetail() {
                           </select>
                         </div>
 
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "13px",
-                              fontWeight: 500,
-                              marginBottom: "6px",
-                            }}
-                          >
+                        <div className="admin-field">
+                          <label className="admin-field__label">
                             Adjustment Reason (optional)
                           </label>
                           <input
@@ -920,32 +735,17 @@ export default function TradeInDetail() {
                             name="adjustmentReason"
                             defaultValue={item.adjustmentReason || ""}
                             placeholder="e.g., Light scratching on back"
-                            style={{
-                              width: "100%",
-                              padding: "8px 12px",
-                              border: "1px solid #e5e7eb",
-                              borderRadius: "6px",
-                              fontSize: "14px",
-                            }}
+                            className="admin-field__input"
                           />
                         </div>
 
-                        <div style={{ display: "flex", gap: "8px" }}>
+                        <div className="admin-item__actions">
                           <button
                             type="submit"
                             name="action"
                             value="verify"
                             disabled={isLoading}
-                            style={{
-                              padding: "8px 16px",
-                              background: "#10b981",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontSize: "14px",
-                              fontWeight: 500,
-                            }}
+                            className="admin-btn admin-btn--success admin-btn--sm"
                           >
                             Verify
                           </button>
@@ -954,16 +754,7 @@ export default function TradeInDetail() {
                             name="action"
                             value="adjust"
                             disabled={isLoading}
-                            style={{
-                              padding: "8px 16px",
-                              background: "#f59e0b",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontSize: "14px",
-                              fontWeight: 500,
-                            }}
+                            className="admin-btn admin-btn--warning admin-btn--sm"
                           >
                             Adjust
                           </button>
@@ -972,16 +763,7 @@ export default function TradeInDetail() {
                             name="action"
                             value="reject"
                             disabled={isLoading}
-                            style={{
-                              padding: "8px 16px",
-                              background: "#ef4444",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontSize: "14px",
-                              fontWeight: 500,
-                            }}
+                            className="admin-btn admin-btn--danger admin-btn--sm"
                           >
                             Reject
                           </button>
@@ -990,31 +772,11 @@ export default function TradeInDetail() {
 
                       {/* Price Preview - using marketPricePence with settings multipliers */}
                       {item.marketPricePence && settings && (
-                        <div
-                          style={{
-                            marginTop: "16px",
-                            padding: "12px",
-                            background: "#fff",
-                            borderRadius: "6px",
-                            border: "1px solid #e5e7eb",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              color: "#6b7280",
-                              marginBottom: "8px",
-                            }}
-                          >
+                        <div className="admin-price-preview">
+                          <div className="admin-price-preview__title">
                             Price by condition (market: {formatPrice(item.marketPricePence)}):
                           </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "16px",
-                              fontSize: "13px",
-                            }}
-                          >
+                          <div className="admin-price-preview__list">
                             <span>
                               NM: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierNM / 10) * 10 * item.quantity)}
                             </span>
@@ -1036,16 +798,7 @@ export default function TradeInDetail() {
                     </fetcher.Form>
 
                     {item.adjustmentReason && (
-                      <div
-                        style={{
-                          marginTop: "12px",
-                          padding: "12px",
-                          background: "#fef3c7",
-                          borderRadius: "6px",
-                          fontSize: "14px",
-                          color: "#92400e",
-                        }}
-                      >
+                      <div className="admin-adjustment-note">
                         <strong>Adjustment Note:</strong> {item.adjustmentReason}
                       </div>
                     )}
@@ -1057,118 +810,57 @@ export default function TradeInDetail() {
         </div>
 
         {/* Sidebar */}
-        <div>
+        <div className="admin-detail__sidebar">
           {/* Customer Card */}
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "8px",
-              border: "1px solid #e5e7eb",
-              padding: "20px",
-              marginBottom: "16px",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0 0 16px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#6b7280",
-                textTransform: "uppercase",
-              }}
-            >
-              Customer
-            </h3>
-            <div style={{ fontWeight: 600, marginBottom: "4px" }}>
-              {submission.customer.firstName} {submission.customer.lastName}
-            </div>
-            <a
-              href={`mailto:${submission.customer.email}`}
-              style={{ color: "#3b82f6", fontSize: "14px" }}
-            >
-              {submission.customer.email}
-            </a>
-            {submission.customer.phone && (
-              <div style={{ color: "#6b7280", fontSize: "14px", marginTop: "4px" }}>
-                {submission.customer.phone}
+          <div className="admin-sidebar-card">
+            <h3 className="admin-sidebar-card__title">Customer</h3>
+            <div className="admin-customer">
+              <div className="admin-customer__name">
+                {submission.customer.firstName} {submission.customer.lastName}
               </div>
-            )}
+              <a href={`mailto:${submission.customer.email}`} className="admin-customer__email">
+                {submission.customer.email}
+              </a>
+              {submission.customer.phone && (
+                <div className="admin-customer__phone">
+                  {submission.customer.phone}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Shipping Card - show for SUBMITTED, IN_TRANSIT, or RECEIVED statuses */}
           {(submission.status === SubmissionStatus.SUBMITTED ||
             submission.status === SubmissionStatus.IN_TRANSIT ||
             submission.status === SubmissionStatus.RECEIVED) && (
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: "8px",
-                border: "1px solid #e5e7eb",
-                padding: "20px",
-                marginBottom: "16px",
-              }}
-            >
-              <h3
-                style={{
-                  margin: "0 0 16px",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  color: "#6b7280",
-                  textTransform: "uppercase",
-                }}
-              >
-                Shipping
-              </h3>
-              <fetcher.Form method="post">
+            <div className="admin-sidebar-card">
+              <h3 className="admin-sidebar-card__title">Shipping</h3>
+              <fetcher.Form method="post" className="admin-shipping__form">
                 <input type="hidden" name="intent" value="updateTracking" />
-                <div style={{ marginBottom: "12px" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "13px",
-                      fontWeight: 500,
-                      marginBottom: "6px",
-                    }}
-                  >
-                    Tracking Number
-                  </label>
+                <div className="admin-field">
+                  <label className="admin-field__label">Tracking Number</label>
                   <input
                     type="text"
                     name="trackingNumber"
                     defaultValue={submission.trackingNumber || ""}
                     placeholder="Enter tracking number"
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "6px",
-                      fontSize: "14px",
-                    }}
+                    className="admin-field__input"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isLoading}
-                  style={{
-                    padding: "8px 16px",
-                    background: "#f3f4f6",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    width: "100%",
-                  }}
+                  className="admin-btn admin-btn--secondary"
                 >
                   Save Tracking
                 </button>
               </fetcher.Form>
               {submission.trackingNumber && (
-                <div style={{ marginTop: "12px", fontSize: "14px" }}>
+                <div className="admin-shipping__link">
                   <a
                     href={`https://www.royalmail.com/track-your-item#/tracking-results/${submission.trackingNumber}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ color: "#3b82f6" }}
                   >
                     Track on Royal Mail →
                   </a>
@@ -1178,27 +870,9 @@ export default function TradeInDetail() {
           )}
 
           {/* Timeline Card */}
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "8px",
-              border: "1px solid #e5e7eb",
-              padding: "20px",
-              marginBottom: "16px",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0 0 16px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#6b7280",
-                textTransform: "uppercase",
-              }}
-            >
-              Timeline
-            </h3>
-            <div style={{ fontSize: "14px" }}>
+          <div className="admin-sidebar-card">
+            <h3 className="admin-sidebar-card__title">Timeline</h3>
+            <div className="admin-timeline">
               {[
                 { label: "Created", date: submission.createdAt },
                 { label: "Submitted", date: submission.submittedAt },
@@ -1209,74 +883,35 @@ export default function TradeInDetail() {
               ]
                 .filter((t) => t.date)
                 .map((t) => (
-                  <div
-                    key={t.label}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    <span style={{ color: "#6b7280" }}>{t.label}</span>
-                    <span>{formatDate(t.date!)}</span>
+                  <div key={t.label} className="admin-timeline__item">
+                    <span className="admin-timeline__label">{t.label}</span>
+                    <span className="admin-timeline__date">{formatDate(t.date!)}</span>
                   </div>
                 ))}
             </div>
           </div>
 
           {/* Notes Card */}
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "8px",
-              border: "1px solid #e5e7eb",
-              padding: "20px",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0 0 16px",
-                fontSize: "14px",
-                fontWeight: 600,
-                color: "#6b7280",
-                textTransform: "uppercase",
-              }}
-            >
-              Notes
-            </h3>
+          <div className="admin-sidebar-card">
+            <h3 className="admin-sidebar-card__title">Notes</h3>
 
-            <fetcher.Form method="post">
+            <fetcher.Form method="post" className="admin-notes__form">
               <input type="hidden" name="intent" value="addNote" />
               <textarea
                 name="message"
                 placeholder="Add a note..."
                 rows={3}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  resize: "vertical",
-                  marginBottom: "8px",
-                }}
+                className="admin-notes__textarea"
               />
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <label style={{ fontSize: "13px", color: "#6b7280" }}>
-                  <input type="checkbox" name="isInternal" value="true" /> Internal
-                  only
+              <div className="admin-notes__footer">
+                <label className="admin-notes__checkbox">
+                  <input type="checkbox" name="isInternal" value="true" />
+                  Internal only
                 </label>
                 <button
                   type="submit"
                   disabled={isLoading}
-                  style={{
-                    padding: "6px 12px",
-                    background: "#f3f4f6",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                  }}
+                  className="admin-btn admin-btn--secondary admin-btn--sm"
                 >
                   Add Note
                 </button>
@@ -1284,34 +919,20 @@ export default function TradeInDetail() {
             </fetcher.Form>
 
             {submission.notes.length > 0 && (
-              <div style={{ marginTop: "16px", borderTop: "1px solid #e5e7eb", paddingTop: "16px" }}>
+              <div className="admin-notes__list">
                 {submission.notes.map((note) => (
                   <div
                     key={note.id}
-                    style={{
-                      padding: "12px",
-                      background: note.isInternal ? "#fef3c7" : "#f9fafb",
-                      borderRadius: "6px",
-                      marginBottom: "8px",
-                      fontSize: "14px",
-                    }}
+                    className={`admin-note ${note.isInternal ? 'admin-note--internal' : 'admin-note--external'}`}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "4px",
-                        fontSize: "12px",
-                        color: "#6b7280",
-                      }}
-                    >
+                    <div className="admin-note__header">
                       <span>
                         {note.authorType}
                         {note.isInternal && " (Internal)"}
                       </span>
                       <span>{formatDate(note.createdAt)}</span>
                     </div>
-                    <div>{note.message}</div>
+                    <div className="admin-note__message">{note.message}</div>
                   </div>
                 ))}
               </div>
@@ -1333,24 +954,9 @@ function SummaryCard({
   highlight?: boolean;
 }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: "8px",
-        border: "1px solid #e5e7eb",
-        padding: "16px",
-      }}
-    >
-      <div style={{ color: "#6b7280", fontSize: "13px", marginBottom: "4px" }}>
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: "20px",
-          fontWeight: 600,
-          color: highlight ? "#b45309" : "#111827",
-        }}
-      >
+    <div className="admin-summary-card">
+      <div className="admin-summary-card__label">{label}</div>
+      <div className={`admin-summary-card__value ${highlight ? 'admin-summary-card__value--highlight' : ''}`}>
         {value}
       </div>
     </div>
@@ -1363,10 +969,10 @@ export const headers: HeadersFunction = (headersArgs) => {
 
 export function ErrorBoundary() {
   return (
-    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <h1 style={{ color: "#dc2626" }}>Error Loading Submission</h1>
-      <p>Something went wrong while loading this trade-in submission.</p>
-      <a href="/app/trade-ins" style={{ color: "#3b82f6" }}>
+    <div className="admin-trade-ins admin-error">
+      <h1 className="admin-error__title">Error Loading Submission</h1>
+      <p className="admin-error__message">Something went wrong while loading this trade-in submission.</p>
+      <a href="/app/trade-ins" className="admin-error__link">
         ← Back to Submissions
       </a>
     </div>
