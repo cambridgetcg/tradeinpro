@@ -469,8 +469,8 @@ export default function TradeIns() {
                 key={submission.id}
                 onClick={() => {
                   console.log('[trade-ins] Navigating to submission:', submission.id);
-                  // Use window.location for full page navigation to preserve App Bridge context
-                  window.location.href = `/app/trade-ins/${submission.id}`;
+                  // Use React Router navigate - App Bridge should handle embedded navigation
+                  navigate(`/app/trade-ins/${submission.id}`);
                 }}
                 style={{
                   display: "grid",

@@ -31,6 +31,7 @@ import { loader as cardsSetsLoader } from "./api.cards.sets";
 import { loader as submissionsLoader, action as submissionsAction } from "./api.submissions";
 import { loader as packingSlipLoader } from "./api.packing-slip.$number";
 import { loader as shippingInstructionsLoader } from "./api.shipping-instructions.$number";
+import { loader as settingsPublicLoader } from "./api.settings.public";
 
 // ============================================================================
 // Route Matching
@@ -48,6 +49,12 @@ function matchRoute(
   // Normalize path - remove leading slash
   const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
   const segments = normalizedPath.split("/").filter(Boolean);
+
+  // Public settings
+  // GET /settings
+  if (segments[0] === "settings" && method === "GET") {
+    return { handler: settingsPublicLoader };
+  }
 
   // Track submission lookup
   // GET /track or /track?number=X

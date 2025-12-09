@@ -35,6 +35,7 @@ export interface CardSearchResult {
   variant: string | null;
   rarity: string | null;
   imageUrl: string | null;
+  bestPriceGbp: number; // Market price in pence (for reference)
   prices: {
     NM: number;
     LP: number;
@@ -104,7 +105,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const cards = await prisma.cardPriceV2.findMany({
       where: baseWhere,
-      orderBy: [{ tradeinPriceGbp: "desc" }, { name: "asc" }],
+      orderBy: [{ bestPriceGbp: "desc" }, { name: "asc" }],
       take: limit,
       select: {
         cardId: true,
@@ -114,17 +115,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         variantType: true,
         rarity: true,
         imageUrl: true,
-        tradeinPriceGbp: true,
+        bestPriceGbp: true, // Market price - use this as base for calculations
       },
     });
 
     // Transform to API response format with condition prices
+    // IMPORTANT: Use bestPriceGbp (market price) as the base for condition multipliers
+    // This ensures NM = 70% of market, LP = 55% of market, etc.
+    // Previously used tradeinPriceGbp which already had 70% applied, causing double-discount
     const results: CardSearchResult[] = cards.map((card: typeof cards[number]) => {
-      const basePrice = card.tradeinPriceGbp
-        ? Math.round(Number(card.tradeinPriceGbp) * 100) // Convert GBP to pence
+      const marketPricePence = card.bestPriceGbp
+        ? Math.round(Number(card.bestPriceGbp) * 100) // Convert GBP to pence
         : 0;
 
-      // Apply condition multipliers
+      // Apply condition multipliers to market price (not tradein price)
       return {
         id: card.cardId, // Use cardId as the ID for cart operations
         cardName: card.name,
@@ -134,12 +138,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         variant: card.variantType,
         rarity: card.rarity,
         imageUrl: card.imageUrl,
+        bestPriceGbp: marketPricePence, // Market price in pence for theme reference
         prices: {
-          NM: Math.round(basePrice * settings.conditionMultiplierNM),
-          LP: Math.round(basePrice * settings.conditionMultiplierLP),
-          MP: Math.round(basePrice * settings.conditionMultiplierMP),
-          HP: Math.round(basePrice * settings.conditionMultiplierHP),
-          DMG: Math.round(basePrice * settings.conditionMultiplierDMG),
+          // Round down to nearest 10p (10 pence)
+          NM: Math.floor(marketPricePence * settings.conditionMultiplierNM / 10) * 10,
+          LP: Math.floor(marketPricePence * settings.conditionMultiplierLP / 10) * 10,
+          MP: Math.floor(marketPricePence * settings.conditionMultiplierMP / 10) * 10,
+          HP: Math.floor(marketPricePence * settings.conditionMultiplierHP / 10) * 10,
+          DMG: Math.floor(marketPricePence * settings.conditionMultiplierDMG / 10) * 10,
         },
       };
     });

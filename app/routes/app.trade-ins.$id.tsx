@@ -450,8 +450,14 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function TradeInDetail() {
-  const { submission, gradingProgress, validNextStatuses, transitionResults, settings } =
-    useLoaderData<typeof loader>();
+  console.log('[TradeInDetail] Component rendering');
+
+  const loaderData = useLoaderData<typeof loader>();
+  console.log('[TradeInDetail] Loader data:', loaderData ? 'present' : 'missing');
+
+  const { submission, gradingProgress, validNextStatuses, transitionResults, settings } = loaderData;
+  console.log('[TradeInDetail] Submission:', submission?.submissionNumber);
+
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);

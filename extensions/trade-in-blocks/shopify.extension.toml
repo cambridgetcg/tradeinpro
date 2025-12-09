@@ -3,6 +3,7 @@ api_version = "2025-01"
 [[extensions]]
 name = "Trade-In System"
 handle = "trade-in-blocks"
+uid = "958b9617-901a-018f-423e-180e24186c480b33664f"
 type = "theme"
 
   [[extensions.assets]]
