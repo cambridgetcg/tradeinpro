@@ -170,6 +170,7 @@ export interface ValidatedItem {
   input: CreateItemInput;
   card: Awaited<ReturnType<typeof prisma.cardPriceV2.findUnique>> | null;
   price: number;
+  marketPricePence: number; // Base market price for grading recalculations
   isValid: boolean;
   error?: string;
 }
@@ -224,6 +225,7 @@ export async function validateAndPrepareItems(
         input: item,
         card: null,
         price: 0,
+        marketPricePence: 0,
         isValid: false,
         error: 'Card not found'
       });
@@ -235,15 +237,17 @@ export async function validateAndPrepareItems(
       continue;
     }
 
-    // Calculate price from pre-fetched data (no DB query)
+    // Get market price and calculate condition price
+    const marketPricePence = card.bestPriceGbp ? Math.round(Number(card.bestPriceGbp) * 100) : 0;
     const price = calculatePriceFromCard(card, item.conditionClaimed, settings);
-    console.log('[validateAndPrepareItems] calculated price:', price, 'for condition:', item.conditionClaimed);
+    console.log('[validateAndPrepareItems] calculated price:', price, 'for condition:', item.conditionClaimed, 'market:', marketPricePence);
     totalValue += price * item.quantity;
 
     validatedItems.push({
       input: item,
       card,
       price,
+      marketPricePence,
       isValid: true
     });
   }
@@ -628,6 +632,7 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
             variant: vi.input.variant || null,
             quantity: vi.input.quantity,
             conditionClaimed: vi.input.conditionClaimed,
+            marketPricePence: vi.marketPricePence, // Store for grading recalculations
             quotedPrice: vi.price * vi.input.quantity,
             status: "PENDING",
           })),

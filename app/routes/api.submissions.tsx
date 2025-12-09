@@ -22,6 +22,7 @@ import {
   submitSubmission,
   type CreateItemInput,
 } from "../lib/submissions.server";
+import { sendSubmissionCreatedNotification } from "../lib/notifications.server";
 import { Condition, PayoutType, type ConditionType, type PayoutTypeValue } from "../lib/constants";
 
 // ============================================================================
@@ -132,7 +133,15 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Auto-submit the submission (changes status from DRAFT to SUBMITTED)
     // This makes it visible in the admin queue immediately
-    const submittedSubmission = await submitSubmission(result.submission.id);
+    const submittedSubmission = await submitSubmission(result.submission!.id);
+
+    // Send confirmation email to customer
+    try {
+      await sendSubmissionCreatedNotification(submittedSubmission);
+    } catch (notifyError) {
+      console.error("Failed to send submission confirmation email:", notifyError);
+      // Don't fail the request, submission is still created
+    }
 
     return jsonResponse(
       {

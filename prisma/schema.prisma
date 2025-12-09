@@ -302,7 +302,8 @@ model TradeInItem {
   conditionClaimed String  // NM, LP, MP, HP, DMG
   conditionActual  String? // Set during grading
 
-  // Prices (in cents)
+  // Prices (in pence)
+  marketPricePence Int?     // Base market price for condition calculations
   quotedPrice     Int      @default(0)
   finalPrice      Int?
 

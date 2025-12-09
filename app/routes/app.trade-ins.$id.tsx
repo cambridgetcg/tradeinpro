@@ -36,6 +36,7 @@ interface ItemData {
   finalPrice: number | null;
   adjustmentReason: string | null;
   status: string;
+  marketPricePence: number | null; // Base market price for condition calculations
   cardPrice: {
     priceNM: number;
     priceLP: number;
@@ -154,9 +155,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 export const action = async ({ request, params }: ActionFunctionArgs) => {
   // Server-only imports
   const { attemptTransition } = await import("../lib/workflow.server");
+  const { createPayout } = await import("../lib/payouts.server");
+  const {
+    sendSubmissionReceivedNotification,
+    sendGradingCompleteNotification,
+  } = await import("../lib/notifications.server");
   type SubmissionContext = Parameters<typeof attemptTransition>[0];
 
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent");
@@ -226,6 +232,38 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         },
       });
 
+      // Auto-create payout when transitioning to APPROVED
+      if (newStatus === SubmissionStatus.APPROVED) {
+        const payoutResult = await createPayout(session.shop, params.id!);
+        if (!payoutResult.success) {
+          console.error("Failed to create payout:", payoutResult.error);
+          // Don't fail the status update, just log the error
+          // Payout can be created manually from the payouts page
+        }
+      }
+
+      // Send email notifications for key status changes
+      // Fetch fresh submission data for notifications
+      const updatedSubmission = await prisma.tradeInSubmission.findUnique({
+        where: { id: params.id },
+        include: { customer: true, items: true },
+      });
+
+      if (updatedSubmission) {
+        try {
+          if (newStatus === SubmissionStatus.RECEIVED) {
+            await sendSubmissionReceivedNotification(updatedSubmission);
+          } else if (newStatus === SubmissionStatus.PENDING_APPROVAL) {
+            await sendGradingCompleteNotification(updatedSubmission);
+          }
+          // Note: APPROVED notification is sent via payout processing
+          // Note: SUBMITTED notification is sent when customer submits from storefront
+        } catch (notifyError) {
+          console.error("Failed to send notification:", notifyError);
+          // Don't fail the status update
+        }
+      }
+
       return { success: true, action: "statusUpdated" };
     }
 
@@ -235,9 +273,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const adjustmentReason = (formData.get("adjustmentReason") as string) || null;
       const action = formData.get("action") as "verify" | "adjust" | "reject";
 
+      // Get settings for price calculation
+      const settings = await prisma.tradeInSettings.findFirst();
+      const multipliers: Record<string, number> = {
+        NM: settings?.conditionMultiplierNM ?? 0.70,
+        LP: settings?.conditionMultiplierLP ?? 0.55,
+        MP: settings?.conditionMultiplierMP ?? 0.40,
+        HP: settings?.conditionMultiplierHP ?? 0.25,
+        DMG: settings?.conditionMultiplierDMG ?? 0.10,
+      };
+
       const item = await prisma.tradeInItem.findUnique({
         where: { id: itemId },
-        include: { cardPrice: true, submission: true },
+        include: { submission: true },
       });
 
       if (!item) {
@@ -251,10 +299,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         finalPrice = 0;
         status = ItemStatus.REJECTED;
       } else if (action === "adjust" || isConditionWorse(conditionActual, item.conditionClaimed as ConditionType)) {
-        // Calculate new price based on actual condition
-        if (item.cardPrice) {
-          const priceKey = `price${conditionActual}` as keyof typeof item.cardPrice;
-          finalPrice = (item.cardPrice[priceKey] as number) * item.quantity;
+        // Calculate new price based on actual condition using marketPricePence
+        if (item.marketPricePence) {
+          const multiplier = multipliers[conditionActual] ?? 0.70;
+          // Round down to nearest 10p, same as initial calculation
+          const pricePerUnit = Math.floor(item.marketPricePence * multiplier / 10) * 10;
+          finalPrice = pricePerUnit * item.quantity;
         }
         status = ItemStatus.ADJUSTED;
       }
@@ -293,7 +343,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
       const submission = await prisma.tradeInSubmission.findUnique({
         where: { id: submissionId },
-        include: { items: { include: { cardPrice: true } } },
+        include: { items: true },
       });
 
       if (!submission) {
@@ -304,20 +354,14 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         (i) => i.status === ItemStatus.PENDING
       );
 
+      // For bulk verify, we use the quoted price (already calculated at submission)
+      // The condition is verified as matching the claimed condition
       for (const item of pendingItems) {
-        const conditionActual = item.conditionClaimed;
-        let finalPrice = item.quotedPrice;
-
-        if (gradeAction === "use-claimed" && item.cardPrice) {
-          const priceKey = `price${conditionActual}` as keyof typeof item.cardPrice;
-          finalPrice = (item.cardPrice[priceKey] as number) * item.quantity;
-        }
-
         await prisma.tradeInItem.update({
           where: { id: item.id },
           data: {
-            conditionActual,
-            finalPrice,
+            conditionActual: item.conditionClaimed,
+            finalPrice: item.quotedPrice, // Keep original quoted price
             status: ItemStatus.VERIFIED,
           },
         });
@@ -370,6 +414,29 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return { success: true, action: "noteAdded" };
     }
 
+    case "updateTracking": {
+      const trackingNumber = (formData.get("trackingNumber") as string)?.trim() || null;
+
+      await prisma.tradeInSubmission.update({
+        where: { id: params.id },
+        data: { trackingNumber },
+      });
+
+      // Add a note about the tracking update
+      if (trackingNumber) {
+        await prisma.submissionNote.create({
+          data: {
+            submissionId: params.id!,
+            authorType: "SYSTEM",
+            message: `Tracking number updated: ${trackingNumber}`,
+            isInternal: true,
+          },
+        });
+      }
+
+      return { success: true, action: "trackingUpdated" };
+    }
+
     default:
       return { error: "Unknown action" };
   }
@@ -392,6 +459,7 @@ export default function TradeInDetail() {
           itemGraded: "Item graded",
           bulkGraded: `Graded ${(fetcher.data as { count?: number }).count || "all pending"} items`,
           noteAdded: "Note added",
+          trackingUpdated: "Tracking number updated",
         };
         shopify.toast.show(messages[(fetcher.data as { action: string }).action] || "Updated");
       } else if ("error" in fetcher.data) {
@@ -907,8 +975,8 @@ export default function TradeInDetail() {
                         </div>
                       </div>
 
-                      {/* Price Preview */}
-                      {item.cardPrice && (
+                      {/* Price Preview - using marketPricePence with settings multipliers */}
+                      {item.marketPricePence && settings && (
                         <div
                           style={{
                             marginTop: "16px",
@@ -925,7 +993,7 @@ export default function TradeInDetail() {
                               marginBottom: "8px",
                             }}
                           >
-                            Price by condition:
+                            Price by condition (market: {formatPrice(item.marketPricePence)}):
                           </div>
                           <div
                             style={{
@@ -935,19 +1003,19 @@ export default function TradeInDetail() {
                             }}
                           >
                             <span>
-                              NM: {formatPrice(item.cardPrice.priceNM * item.quantity)}
+                              NM: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierNM / 10) * 10 * item.quantity)}
                             </span>
                             <span>
-                              LP: {formatPrice(item.cardPrice.priceLP * item.quantity)}
+                              LP: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierLP / 10) * 10 * item.quantity)}
                             </span>
                             <span>
-                              MP: {formatPrice(item.cardPrice.priceMP * item.quantity)}
+                              MP: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierMP / 10) * 10 * item.quantity)}
                             </span>
                             <span>
-                              HP: {formatPrice(item.cardPrice.priceHP * item.quantity)}
+                              HP: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierHP / 10) * 10 * item.quantity)}
                             </span>
                             <span>
-                              DMG: {formatPrice(item.cardPrice.priceDMG * item.quantity)}
+                              DMG: {formatPrice(Math.floor(item.marketPricePence * settings.conditionMultiplierDMG / 10) * 10 * item.quantity)}
                             </span>
                           </div>
                         </div>
@@ -1013,6 +1081,88 @@ export default function TradeInDetail() {
               </div>
             )}
           </div>
+
+          {/* Shipping Card - show for SUBMITTED, IN_TRANSIT, or RECEIVED statuses */}
+          {(submission.status === SubmissionStatus.SUBMITTED ||
+            submission.status === SubmissionStatus.IN_TRANSIT ||
+            submission.status === SubmissionStatus.RECEIVED) && (
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                padding: "20px",
+                marginBottom: "16px",
+              }}
+            >
+              <h3
+                style={{
+                  margin: "0 0 16px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  color: "#6b7280",
+                  textTransform: "uppercase",
+                }}
+              >
+                Shipping
+              </h3>
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="updateTracking" />
+                <div style={{ marginBottom: "12px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "13px",
+                      fontWeight: 500,
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Tracking Number
+                  </label>
+                  <input
+                    type="text"
+                    name="trackingNumber"
+                    defaultValue={submission.trackingNumber || ""}
+                    placeholder="Enter tracking number"
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "6px",
+                      fontSize: "14px",
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  style={{
+                    padding: "8px 16px",
+                    background: "#f3f4f6",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    width: "100%",
+                  }}
+                >
+                  Save Tracking
+                </button>
+              </fetcher.Form>
+              {submission.trackingNumber && (
+                <div style={{ marginTop: "12px", fontSize: "14px" }}>
+                  <a
+                    href={`https://www.royalmail.com/track-your-item#/tracking-results/${submission.trackingNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#3b82f6" }}
+                  >
+                    Track on Royal Mail →
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Timeline Card */}
           <div
