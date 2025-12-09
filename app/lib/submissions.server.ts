@@ -606,6 +606,9 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
     : 0;
 
   // 5. Create submission with PRE-CALCULATED items (1 transaction, no additional lookups)
+  // NOTE: cardPriceId is set to null because we're using CardPriceV2 for lookups,
+  // and the TradeInItem.cardPriceId FK references the legacy CardPrice table.
+  // Card details are denormalized in the item record anyway.
   const submission = await prisma.tradeInSubmission.create({
     data: {
       submissionNumber,
@@ -618,7 +621,7 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
         create: validatedItems
           .filter(vi => vi.isValid)
           .map(vi => ({
-            cardPriceId: vi.input.cardPriceId || null,
+            cardPriceId: null, // CardPriceV2 IDs are incompatible with CardPrice FK
             cardName: vi.input.cardName,
             setName: vi.input.setName,
             setCode: vi.input.setCode || null,
