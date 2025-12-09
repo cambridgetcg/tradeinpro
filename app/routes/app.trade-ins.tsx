@@ -463,24 +463,26 @@ export default function TradeIns() {
 
             {/* Table Body */}
             {submissions.map((submission) => (
-              <Link
+              <div
                 key={submission.id}
-                to={`/app/trade-ins/${submission.id}`}
-                style={{ textDecoration: "none", color: "inherit" }}
+                onClick={() => {
+                  console.log('[trade-ins] Navigating to submission:', submission.id);
+                  navigate(`/app/trade-ins/${submission.id}`);
+                }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.5fr 1fr 1fr 100px 100px 80px",
+                  padding: "16px 20px",
+                  borderBottom: "1px solid #e5e7eb",
+                  alignItems: "center",
+                  cursor: "pointer",
+                  transition: "background 0.15s",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1.5fr 1fr 1fr 100px 100px 80px",
-                    padding: "16px 20px",
-                    borderBottom: "1px solid #e5e7eb",
-                    alignItems: "center",
-                    cursor: "pointer",
-                    transition: "background 0.15s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
                   {/* Submission Info */}
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -550,8 +552,7 @@ export default function TradeIns() {
                   <div style={{ textAlign: "right" }}>
                     <span style={{ color: "#3b82f6", fontSize: "14px" }}>View →</span>
                   </div>
-                </div>
-              </Link>
+              </div>
             ))}
           </>
         )}
