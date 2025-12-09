@@ -398,6 +398,8 @@
   align-items: center;
   cursor: pointer;
   transition: background-color var(--ti-transition);
+  text-decoration: none;
+  color: inherit;
 }
 
 .admin-table__row:hover {

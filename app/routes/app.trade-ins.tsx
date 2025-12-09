@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, Link, useSearchParams, useNavigate } from "react-router";
+import { useLoaderData, Link, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -188,7 +188,6 @@ export default function TradeIns() {
   const { submissions, pagination, filters, statusCounts } =
     useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const handleStatusFilter = (status: string | null) => {
     const params = new URLSearchParams(searchParams);
@@ -345,12 +344,9 @@ export default function TradeIns() {
 
             {/* Table Body */}
             {submissions.map((submission) => (
-              <div
+              <Link
                 key={submission.id}
-                onClick={() => {
-                  console.log("[trade-ins] Navigating to submission:", submission.id);
-                  navigate(`/app/trade-ins/${submission.id}`);
-                }}
+                to={`/app/trade-ins/${submission.id}`}
                 className="admin-table__row"
               >
                 {/* Submission Info */}
@@ -413,7 +409,7 @@ export default function TradeIns() {
                 <div className="admin-table__cell admin-table__cell--right">
                   <span className="admin-view-link">View →</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
