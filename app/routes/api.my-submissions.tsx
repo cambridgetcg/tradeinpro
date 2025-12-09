@@ -1,0 +1,276 @@
+/**
+ * Customer Submissions List API
+ *
+ * GET /apps/trade-in/my-submissions
+ *
+ * Returns all trade-in submissions for the logged-in customer.
+ * Requires customer authentication via App Proxy.
+ */
+
+import type { LoaderFunctionArgs } from "react-router";
+import {
+  requireCustomer,
+  jsonResponse,
+  errorResponse,
+  parsePositiveInt,
+} from "../lib/app-proxy.server";
+import prisma from "../db.server";
+import {
+  SubmissionStatus,
+  SubmissionStatusLabels,
+  type SubmissionStatusType,
+} from "../lib/constants";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface SubmissionSummary {
+  id: string;
+  submissionNumber: string;
+  status: string;
+  statusLabel: string;
+  itemCount: number;
+  quotedTotal: number;
+  finalTotal: number | null;
+  payoutType: string;
+  payoutTypeLabel: string;
+  createdAt: string;
+  submittedAt: string | null;
+  completedAt: string | null;
+  // Quick action flags
+  canDownloadPackingSlip: boolean;
+  canViewShippingInstructions: boolean;
+  needsReview: boolean;
+  isComplete: boolean;
+}
+
+interface CustomerStats {
+  total: number;
+  pending: number;
+  completed: number;
+  totalEarned: number;
+}
+
+interface CustomerSubmissionsResponse {
+  submissions: SubmissionSummary[];
+  stats: CustomerStats;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+}
+
+// ============================================================================
+// Status Helpers
+// ============================================================================
+
+const PAYOUT_TYPE_LABELS: Record<string, string> = {
+  STORE_CREDIT: "Store Credit",
+  BANK: "Bank Transfer",
+};
+
+const PENDING_STATUSES = [
+  SubmissionStatus.SUBMITTED,
+  SubmissionStatus.IN_TRANSIT,
+  SubmissionStatus.RECEIVED,
+  SubmissionStatus.GRADING,
+  SubmissionStatus.PENDING_APPROVAL,
+  SubmissionStatus.APPROVED,
+];
+
+const COMPLETED_STATUSES = [SubmissionStatus.COMPLETED];
+
+// ============================================================================
+// Loader
+// ============================================================================
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  // Require logged-in customer
+  let context;
+  try {
+    context = await requireCustomer(request);
+  } catch (response) {
+    // In development, allow bypassing auth for testing
+    if (process.env.NODE_ENV !== "production") {
+      const url = new URL(request.url);
+      const testCustomerId = url.searchParams.get("_test_customer_id");
+      if (testCustomerId) {
+        const customer = await prisma.customer.findUnique({
+          where: { id: testCustomerId },
+        });
+        if (customer) {
+          context = {
+            isValid: true,
+            shop: "test",
+            customerId: customer.shopifyCustomerId || "test",
+            internalCustomerId: customer.id,
+            locale: "en",
+            timestamp: "",
+            path_prefix: "",
+          };
+        }
+      }
+    }
+    if (!context) {
+      return response as Response;
+    }
+  }
+
+  const url = new URL(request.url);
+  const page = parsePositiveInt(url.searchParams.get("page"), 1);
+  const limit = Math.min(parsePositiveInt(url.searchParams.get("limit"), 20), 50);
+  const status = url.searchParams.get("status"); // Optional filter
+
+  try {
+    // Build where clause
+    const where: {
+      customerId: string;
+      status?: { in: string[] } | string;
+    } = {
+      customerId: context.internalCustomerId,
+    };
+
+    // Filter by status if provided
+    if (status) {
+      if (status === "pending") {
+        where.status = { in: PENDING_STATUSES };
+      } else if (status === "completed") {
+        where.status = { in: COMPLETED_STATUSES };
+      } else if (Object.values(SubmissionStatus).includes(status as SubmissionStatusType)) {
+        where.status = status;
+      }
+    }
+
+    // Exclude drafts from customer view
+    if (!where.status) {
+      where.status = { in: [...PENDING_STATUSES, ...COMPLETED_STATUSES, SubmissionStatus.CANCELLED, SubmissionStatus.RETURNED] };
+    }
+
+    // Fetch submissions with pagination
+    const [submissions, total, stats] = await Promise.all([
+      prisma.tradeInSubmission.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          _count: { select: { items: true } },
+        },
+      }),
+
+      prisma.tradeInSubmission.count({ where }),
+
+      // Calculate stats for this customer (all submissions, not filtered)
+      calculateCustomerStats(context.internalCustomerId),
+    ]);
+
+    // Format response
+    const formattedSubmissions: SubmissionSummary[] = submissions.map((sub) => ({
+      id: sub.id,
+      submissionNumber: sub.submissionNumber,
+      status: sub.status,
+      statusLabel:
+        SubmissionStatusLabels[sub.status as keyof typeof SubmissionStatusLabels] ||
+        sub.status,
+      itemCount: sub._count.items,
+      quotedTotal: sub.quotedTotal,
+      finalTotal: sub.finalTotal,
+      payoutType: sub.payoutType,
+      payoutTypeLabel: PAYOUT_TYPE_LABELS[sub.payoutType] || sub.payoutType,
+      createdAt: sub.createdAt.toISOString(),
+      submittedAt: sub.submittedAt?.toISOString() || null,
+      completedAt: sub.completedAt?.toISOString() || null,
+      // Quick action flags
+      canDownloadPackingSlip:
+        sub.status === SubmissionStatus.SUBMITTED ||
+        sub.status === SubmissionStatus.IN_TRANSIT,
+      canViewShippingInstructions:
+        sub.status === SubmissionStatus.SUBMITTED ||
+        sub.status === SubmissionStatus.IN_TRANSIT,
+      needsReview: sub.status === SubmissionStatus.PENDING_APPROVAL,
+      isComplete: sub.status === SubmissionStatus.COMPLETED,
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+
+    const response: CustomerSubmissionsResponse = {
+      submissions: formattedSubmissions,
+      stats,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasMore: page < totalPages,
+      },
+    };
+
+    return jsonResponse(response);
+  } catch (error) {
+    console.error("Error fetching customer submissions:", error);
+    return errorResponse(500, "fetch_failed", "Failed to load submissions");
+  }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+async function calculateCustomerStats(customerId: string): Promise<CustomerStats> {
+  const [total, pending, completed, earnings] = await Promise.all([
+    // Total submissions (excluding drafts)
+    prisma.tradeInSubmission.count({
+      where: {
+        customerId,
+        status: { not: SubmissionStatus.DRAFT },
+      },
+    }),
+
+    // Pending submissions
+    prisma.tradeInSubmission.count({
+      where: {
+        customerId,
+        status: { in: PENDING_STATUSES },
+      },
+    }),
+
+    // Completed submissions
+    prisma.tradeInSubmission.count({
+      where: {
+        customerId,
+        status: SubmissionStatus.COMPLETED,
+      },
+    }),
+
+    // Total earned from completed submissions
+    prisma.tradeInSubmission.aggregate({
+      where: {
+        customerId,
+        status: SubmissionStatus.COMPLETED,
+      },
+      _sum: {
+        finalTotal: true,
+        bonusAmount: true,
+      },
+    }),
+  ]);
+
+  const totalEarned =
+    (earnings._sum.finalTotal || 0) + (earnings._sum.bonusAmount || 0);
+
+  return {
+    total,
+    pending,
+    completed,
+    totalEarned,
+  };
+}
+
+// Only GET is supported
+export async function action() {
+  return errorResponse(405, "method_not_allowed", "Only GET requests are supported");
+}
