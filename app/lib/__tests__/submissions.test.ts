@@ -28,6 +28,8 @@ vi.mock("../../db.server", () => ({
   default: {
     tradeInSettings: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
     },
     tradeInSubmission: {
       count: vi.fn(),
@@ -47,6 +49,10 @@ vi.mock("../../db.server", () => ({
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
+    cardPriceV2: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+    },
     tradeInItem: {
       create: vi.fn(),
       findUnique: vi.fn(),
@@ -64,6 +70,8 @@ import prisma from "../../db.server";
 const mockPrisma = prisma as unknown as {
   tradeInSettings: {
     findFirst: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
   };
   tradeInSubmission: {
     count: ReturnType<typeof vi.fn>;
@@ -81,6 +89,10 @@ const mockPrisma = prisma as unknown as {
   cardPrice: {
     findUnique: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  cardPriceV2: {
+    findUnique: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
   };
   tradeInItem: {
@@ -151,9 +163,45 @@ const mockSettings = {
   storeCreditBonusPercent: 10,
 };
 
+// Full settings object used by getOrCreateSettings
+const mockFullSettings = {
+  id: "settings-1",
+  shop: "default",
+  minimumSubmissionValue: 500,
+  maxItemsPerSubmission: 100,
+  autoApproveBelow: 2000,
+  requiresApprovalAbove: 5000,
+  storeCreditBonusPercent: 10,
+  conditionMultiplierNM: 0.7,
+  conditionMultiplierLP: 0.55,
+  conditionMultiplierMP: 0.4,
+  conditionMultiplierHP: 0.25,
+  conditionMultiplierDMG: 0.1,
+  freeShippingThreshold: 5000,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+// Mock CardPriceV2 card
+const mockCardPriceV2 = {
+  cardId: "OP02-OP02-013-manga-parallel-altart",
+  name: "OP02 Portgas D. Ace Manga Parallel Alt Art -EN",
+  game: "onepiece",
+  releaseSet: "OP02",
+  setCode: "OP02",
+  cardNumber: "013",
+  variantType: "manga-parallel-altart",
+  rarity: "Rare",
+  bestPriceGbp: 500, // £500
+  tradeinPriceGbp: 350,
+  imageUrl: null,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.tradeInSettings.findFirst.mockResolvedValue(mockSettings);
+  mockPrisma.tradeInSettings.findUnique.mockResolvedValue(mockFullSettings);
+  mockPrisma.cardPriceV2.findMany.mockResolvedValue([mockCardPriceV2]);
 });
 
 // ============================================================================
@@ -528,6 +576,7 @@ describe("createSubmission", () => {
   beforeEach(() => {
     mockPrisma.cardPrice.findFirst.mockResolvedValue(mockCardPrice);
     mockPrisma.cardPrice.findUnique.mockResolvedValue(mockCardPrice);
+    mockPrisma.cardPriceV2.findMany.mockResolvedValue([mockCardPriceV2]);
     mockPrisma.customer.findUnique.mockResolvedValue(null);
     mockPrisma.customer.findFirst.mockResolvedValue(null);
     mockPrisma.customer.create.mockResolvedValue(mockCustomer);
@@ -543,8 +592,9 @@ describe("createSubmission", () => {
       payoutType: PayoutType.STORE_CREDIT,
       items: [
         {
-          cardName: "Charizard VMAX",
-          setName: "Sword & Shield",
+          cardPriceId: mockCardPriceV2.cardId,
+          cardName: mockCardPriceV2.name,
+          setName: mockCardPriceV2.setCode || "Unknown",
           quantity: 1,
           conditionClaimed: Condition.NM,
         },
@@ -557,12 +607,14 @@ describe("createSubmission", () => {
 
   it("should return validation errors for invalid data", async () => {
     mockPrisma.cardPrice.findFirst.mockResolvedValue(null);
+    mockPrisma.cardPriceV2.findMany.mockResolvedValue([]); // No cards found
 
     const result = await createSubmission({
       email: "test@example.com",
       payoutType: PayoutType.STORE_CREDIT,
       items: [
         {
+          cardPriceId: "invalid-card-id",
           cardName: "Invalid Card",
           setName: "Unknown Set",
           quantity: 1,
@@ -581,8 +633,9 @@ describe("createSubmission", () => {
       payoutType: PayoutType.STORE_CREDIT,
       items: [
         {
-          cardName: "Charizard VMAX",
-          setName: "Sword & Shield",
+          cardPriceId: mockCardPriceV2.cardId,
+          cardName: mockCardPriceV2.name,
+          setName: mockCardPriceV2.setCode || "Unknown",
           quantity: 1,
           conditionClaimed: Condition.NM,
         },
@@ -590,7 +643,10 @@ describe("createSubmission", () => {
     });
 
     const createCall = mockPrisma.tradeInSubmission.create.mock.calls[0][0];
-    expect(createCall.data.bonusAmount).toBe(500); // 10% of 5000
+    // mockCardPriceV2.bestPriceGbp = 500 GBP = 50000 pence
+    // NM condition multiplier = 0.7, so 50000 * 0.7 = 35000 pence (rounded to nearest 10p)
+    // 10% bonus = 3500 pence
+    expect(createCall.data.bonusAmount).toBe(3500);
   });
 
   it("should not add bonus for bank transfer", async () => {
@@ -599,8 +655,9 @@ describe("createSubmission", () => {
       payoutType: PayoutType.BANK,
       items: [
         {
-          cardName: "Charizard VMAX",
-          setName: "Sword & Shield",
+          cardPriceId: mockCardPriceV2.cardId,
+          cardName: mockCardPriceV2.name,
+          setName: mockCardPriceV2.setCode || "Unknown",
           quantity: 1,
           conditionClaimed: Condition.NM,
         },
@@ -620,8 +677,9 @@ describe("createSubmission", () => {
       payoutType: PayoutType.STORE_CREDIT,
       items: [
         {
-          cardName: "Charizard VMAX",
-          setName: "Sword & Shield",
+          cardPriceId: mockCardPriceV2.cardId,
+          cardName: mockCardPriceV2.name,
+          setName: mockCardPriceV2.setCode || "Unknown",
           quantity: 1,
           conditionClaimed: Condition.NM,
         },

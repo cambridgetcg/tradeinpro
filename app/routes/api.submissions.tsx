@@ -81,6 +81,16 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
+    // Debug: Log context and raw items from request
+    console.log('[api.submissions] Shop context:', context.shop);
+    console.log('[api.submissions] Raw items from request:', JSON.stringify(body.items.map((item: any) => ({
+      cardPriceId: item.cardPriceId,
+      cardName: item.cardName,
+      setName: item.setName,
+      quantity: item.quantity,
+      conditionClaimed: item.conditionClaimed
+    })), null, 2));
+
     // Build items array with proper typing
     const items: CreateItemInput[] = body.items.map((item) => ({
       cardPriceId: item.cardPriceId || undefined,
@@ -92,14 +102,23 @@ export async function action({ request }: ActionFunctionArgs) {
       conditionClaimed: item.conditionClaimed as ConditionType,
     }));
 
-    const result = await createSubmission({
-      shopifyCustomerId: context.customerId || undefined,
-      email: body.email.toLowerCase().trim(),
-      firstName: body.firstName ? sanitizeString(body.firstName, 100) : undefined,
-      lastName: body.lastName ? sanitizeString(body.lastName, 100) : undefined,
-      payoutType: body.payoutType as PayoutTypeValue,
-      items,
-    });
+    // Debug: Log processed items
+    console.log('[api.submissions] Processed items:', JSON.stringify(items.map(item => ({
+      cardPriceId: item.cardPriceId,
+      cardName: item.cardName
+    })), null, 2));
+
+    const result = await createSubmission(
+      {
+        shopifyCustomerId: context.customerId || undefined,
+        email: body.email.toLowerCase().trim(),
+        firstName: body.firstName ? sanitizeString(body.firstName, 100) : undefined,
+        lastName: body.lastName ? sanitizeString(body.lastName, 100) : undefined,
+        payoutType: body.payoutType as PayoutTypeValue,
+        items,
+      },
+      context.shop // Pass shop for settings lookup
+    );
 
     if (!result.success) {
       return errorResponse(

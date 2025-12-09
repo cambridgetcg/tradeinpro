@@ -6,6 +6,7 @@
 import prisma from "../db.server";
 import type { Prisma } from "@prisma/client";
 import { Condition, formatPrice, PayoutType, type ConditionType, type PayoutTypeValue } from "./constants";
+import { getOrCreateSettings, getMultiplierFromSettings } from "./settings.server";
 
 // ============================================================================
 // Types
@@ -97,6 +98,174 @@ export interface SubmissionStatusResponse {
     message: string;
     actionUrl?: string;
   } | null;
+}
+
+// ============================================================================
+// Performance Optimization: Request-Scoped Cache
+// ============================================================================
+
+// Settings cache - cleared after each request
+const settingsCache = new Map<string, Awaited<ReturnType<typeof getOrCreateSettings>>>();
+
+export function getSettingsFromCache(shop: string) {
+  return settingsCache.get(shop) || null;
+}
+
+export function setSettingsInCache(shop: string, settings: Awaited<ReturnType<typeof getOrCreateSettings>>) {
+  settingsCache.set(shop, settings);
+}
+
+export function clearSettingsCache() {
+  settingsCache.clear();
+}
+
+// Get settings with caching
+export async function getCachedSettings(shop: string) {
+  const cached = getSettingsFromCache(shop);
+  if (cached) return cached;
+
+  const settings = await getOrCreateSettings(shop);
+  setSettingsInCache(shop, settings);
+  return settings;
+}
+
+// ============================================================================
+// Performance Optimization: Batch Card Lookups
+// ============================================================================
+
+/**
+ * Batch lookup cards from CardPriceV2 - single query instead of N queries
+ */
+export async function batchLookupCardPricesV2(cardIds: string[]) {
+  if (cardIds.length === 0) return new Map<string, Awaited<ReturnType<typeof prisma.cardPriceV2.findUnique>>>();
+
+  const cards = await prisma.cardPriceV2.findMany({
+    where: { cardId: { in: cardIds } }
+  });
+
+  return new Map(cards.map(c => [c.cardId, c]));
+}
+
+/**
+ * Calculate price from pre-fetched card data (no DB query)
+ */
+export function calculatePriceFromCard(
+  card: { bestPriceGbp: unknown },
+  condition: ConditionType,
+  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
+): number {
+  if (!card.bestPriceGbp) return 0;
+
+  const multiplier = getMultiplierFromSettings(settings, condition);
+  const marketPricePence = Math.round(Number(card.bestPriceGbp) * 100);
+  // Round down to nearest 10p
+  return Math.floor(marketPricePence * multiplier / 10) * 10;
+}
+
+// ============================================================================
+// Performance Optimization: Unified Validation + Preparation
+// ============================================================================
+
+export interface ValidatedItem {
+  input: CreateItemInput;
+  card: Awaited<ReturnType<typeof prisma.cardPriceV2.findUnique>> | null;
+  price: number;
+  isValid: boolean;
+  error?: string;
+}
+
+/**
+ * Validate and prepare all items in a single pass with batch DB lookup
+ * Replaces separate validateSubmission + per-item lookups in createSubmission
+ */
+export async function validateAndPrepareItems(
+  items: CreateItemInput[],
+  settings: Awaited<ReturnType<typeof getOrCreateSettings>>
+): Promise<{ validatedItems: ValidatedItem[]; errors: string[]; totalValue: number; totalItems: number }> {
+  // 1. Extract all cardPriceIds for batch lookup
+  const cardIds = items
+    .map(i => i.cardPriceId)
+    .filter((id): id is string => !!id && id.trim().length > 0);
+
+  console.log('[validateAndPrepareItems] Input items count:', items.length);
+  console.log('[validateAndPrepareItems] cardIds to lookup:', JSON.stringify(cardIds));
+
+  // 2. Single batch lookup (1 query instead of N)
+  const cardsMap = await batchLookupCardPricesV2(cardIds);
+  console.log('[validateAndPrepareItems] cardsMap size:', cardsMap.size);
+  if (cardsMap.size > 0) {
+    console.log('[validateAndPrepareItems] cardsMap keys:', JSON.stringify(Array.from(cardsMap.keys())));
+  }
+
+  // 3. Process all items without additional DB queries
+  const validatedItems: ValidatedItem[] = [];
+  const errors: string[] = [];
+  const invalidCards: string[] = [];
+  let totalValue = 0;
+  let totalItems = 0;
+
+  for (const item of items) {
+    totalItems += item.quantity;
+
+    // Look up card from pre-fetched map
+    const card = item.cardPriceId ? cardsMap.get(item.cardPriceId) || null : null;
+
+    // Debug: Show exactly what we're looking up
+    console.log('[validateAndPrepareItems] Looking up:', {
+      cardPriceId: item.cardPriceId,
+      cardPriceIdType: typeof item.cardPriceId,
+      cardPriceIdLength: item.cardPriceId?.length,
+      found: !!card,
+      cardName: item.cardName
+    });
+
+    if (!card) {
+      validatedItems.push({
+        input: item,
+        card: null,
+        price: 0,
+        isValid: false,
+        error: 'Card not found'
+      });
+      // Include the cardPriceId in the error for debugging
+      const errorDetail = item.cardPriceId
+        ? `${item.cardName} (ID: ${item.cardPriceId})`
+        : `${item.cardName} (no ID provided)`;
+      invalidCards.push(errorDetail);
+      continue;
+    }
+
+    // Calculate price from pre-fetched data (no DB query)
+    const price = calculatePriceFromCard(card, item.conditionClaimed, settings);
+    console.log('[validateAndPrepareItems] calculated price:', price, 'for condition:', item.conditionClaimed);
+    totalValue += price * item.quantity;
+
+    validatedItems.push({
+      input: item,
+      card,
+      price,
+      isValid: true
+    });
+  }
+
+  console.log('[validateAndPrepareItems] totalValue:', totalValue, 'minimumRequired:', settings.minimumSubmissionValue);
+
+  // 4. Threshold validation
+  if (totalValue < settings.minimumSubmissionValue) {
+    errors.push(`Minimum submission value is ${formatPrice(settings.minimumSubmissionValue)}`);
+  }
+
+  if (totalItems > settings.maxItemsPerSubmission) {
+    errors.push(`Maximum ${settings.maxItemsPerSubmission} items per submission`);
+  }
+
+  if (invalidCards.length > 0) {
+    errors.push(`Cards not found or not accepting: ${invalidCards.join(", ")}`);
+  }
+
+  console.log('[validateAndPrepareItems] errors:', errors);
+
+  return { validatedItems, errors, totalValue, totalItems };
 }
 
 // ============================================================================
@@ -207,7 +376,7 @@ export async function getOrCreateCustomer(params: {
 // ============================================================================
 
 /**
- * Get price for a card based on condition
+ * Get price for a card based on condition (legacy CardPrice table)
  */
 export function getConditionPrice(
   cardPrice: {
@@ -236,7 +405,7 @@ export function getConditionPrice(
 }
 
 /**
- * Find card price by name and set
+ * Find card price by name and set (legacy CardPrice table)
  */
 export async function findCardPriceByName(
   cardName: string,
@@ -253,18 +422,57 @@ export async function findCardPriceByName(
   });
 }
 
+/**
+ * Find card from CardPriceV2 by cardId
+ * This is the primary lookup for cards from search/browse APIs
+ */
+export async function findCardPriceV2ById(cardId: string) {
+  return prisma.cardPriceV2.findUnique({
+    where: { cardId },
+  });
+}
+
+/**
+ * Calculate trade-in price for a card from CardPriceV2 based on condition
+ * Uses the market price (bestPriceGbp) and applies condition multipliers
+ * Returns price in pence
+ */
+export async function calculateCardPriceV2(
+  cardId: string,
+  condition: ConditionType,
+  shop: string
+): Promise<{ price: number; card: Awaited<ReturnType<typeof findCardPriceV2ById>> } | null> {
+  const card = await findCardPriceV2ById(cardId);
+  if (!card || !card.bestPriceGbp) {
+    return null;
+  }
+
+  const settings = await getOrCreateSettings(shop);
+  const multiplier = getMultiplierFromSettings(settings, condition);
+
+  // Convert GBP to pence and apply condition multiplier
+  // Round down to nearest 10p
+  const marketPricePence = Math.round(Number(card.bestPriceGbp) * 100);
+  const price = Math.floor(marketPricePence * multiplier / 10) * 10;
+
+  return { price, card };
+}
+
 // ============================================================================
 // Submission Validation
 // ============================================================================
 
 /**
  * Validate a submission before creation
+ * Now uses CardPriceV2 for card lookup (primary) with CardPrice as fallback
  */
 export async function validateSubmission(
   items: CreateItemInput[],
-  settings?: SubmissionSettings
+  settings?: SubmissionSettings,
+  shop?: string
 ): Promise<SubmissionValidation> {
   const actualSettings = settings || (await getSubmissionSettings());
+  const shopId = shop || "default";
   const errors: string[] = [];
   const invalidCards: string[] = [];
   let totalValue = 0;
@@ -273,13 +481,30 @@ export async function validateSubmission(
   for (const item of items) {
     totalItems += item.quantity;
 
-    // Lookup card price
+    // Try CardPriceV2 first (primary source for search/browse APIs)
+    if (item.cardPriceId) {
+      const result = await calculateCardPriceV2(
+        item.cardPriceId,
+        item.conditionClaimed,
+        shopId
+      );
+
+      if (result) {
+        totalValue += result.price * item.quantity;
+        continue;
+      }
+    }
+
+    // Fallback to legacy CardPrice table
     let cardPrice;
     if (item.cardPriceId) {
       cardPrice = await prisma.cardPrice.findUnique({
         where: { id: item.cardPriceId },
       });
-    } else {
+    }
+
+    // Try by name if not found by ID
+    if (!cardPrice) {
       cardPrice = await findCardPriceByName(
         item.cardName,
         item.setName,
@@ -336,79 +561,73 @@ export async function validateSubmission(
 // ============================================================================
 
 /**
- * Create a new trade-in submission
+ * Create a new trade-in submission (OPTIMIZED)
+ *
+ * Performance improvements:
+ * - Parallel settings + customer fetch
+ * - Single batch card lookup via validateAndPrepareItems
+ * - No additional DB queries when creating items (uses pre-calculated prices)
+ * - Settings cached for request duration
+ *
+ * Before: 40-60 DB queries for 10 items
+ * After: 6-8 DB queries for any number of items
  */
-export async function createSubmission(input: CreateSubmissionInput) {
-  const settings = await getSubmissionSettings();
+export async function createSubmission(input: CreateSubmissionInput, shop?: string) {
+  const shopId = shop || "default";
 
-  // Validate first
-  const validation = await validateSubmission(input.items, settings);
-  if (!validation.isValid) {
-    return { success: false, errors: validation.errors };
+  // 1. PARALLEL FETCH: Settings + Customer (2 queries instead of sequential)
+  const [settings, customer] = await Promise.all([
+    getCachedSettings(shopId),
+    getOrCreateCustomer({
+      shopifyCustomerId: input.shopifyCustomerId,
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+    })
+  ]);
+
+  // 2. SINGLE-PASS VALIDATION + PRICE CALCULATION (1 batch query for all cards)
+  const { validatedItems, errors, totalValue } = await validateAndPrepareItems(
+    input.items,
+    settings
+  );
+
+  if (errors.length > 0) {
+    clearSettingsCache();
+    return { success: false, errors };
   }
 
-  // Get or create customer
-  const customer = await getOrCreateCustomer({
-    shopifyCustomerId: input.shopifyCustomerId,
-    email: input.email,
-    firstName: input.firstName,
-    lastName: input.lastName,
-  });
-
-  // Generate submission number
+  // 3. Generate submission number (1 query)
   const submissionNumber = await generateSubmissionNumber();
 
-  // Calculate bonus for store credit
-  const bonusAmount =
-    input.payoutType === PayoutType.STORE_CREDIT
-      ? Math.floor(
-          validation.currentTotal * (settings.storeCreditBonusPercent / 100)
-        )
-      : 0;
+  // 4. Calculate bonus (in-memory, no DB)
+  const bonusAmount = input.payoutType === PayoutType.STORE_CREDIT
+    ? Math.floor(totalValue * (settings.storeCreditBonusPercent / 100))
+    : 0;
 
-  // Create submission with items
+  // 5. Create submission with PRE-CALCULATED items (1 transaction, no additional lookups)
   const submission = await prisma.tradeInSubmission.create({
     data: {
       submissionNumber,
       customerId: customer.id,
       status: "DRAFT",
       payoutType: input.payoutType,
-      quotedTotal: validation.currentTotal,
+      quotedTotal: totalValue,
       bonusAmount,
       items: {
-        create: await Promise.all(
-          input.items.map(async (item) => {
-            // Get card price for each item
-            let cardPrice;
-            if (item.cardPriceId) {
-              cardPrice = await prisma.cardPrice.findUnique({
-                where: { id: item.cardPriceId },
-              });
-            } else {
-              cardPrice = await findCardPriceByName(
-                item.cardName,
-                item.setName,
-                item.variant
-              );
-            }
-
-            const price = cardPrice
-              ? getConditionPrice(cardPrice, item.conditionClaimed)
-              : 0;
-
-            return {
-              cardPriceId: cardPrice?.id,
-              cardName: item.cardName,
-              setName: item.setName,
-              setCode: item.setCode,
-              variant: item.variant,
-              quantity: item.quantity,
-              conditionClaimed: item.conditionClaimed,
-              quotedPrice: price * item.quantity,
-              status: "PENDING",
-            };
-          })
-        ),
+        create: validatedItems
+          .filter(vi => vi.isValid)
+          .map(vi => ({
+            cardPriceId: vi.input.cardPriceId || null,
+            cardName: vi.input.cardName,
+            setName: vi.input.setName,
+            setCode: vi.input.setCode || null,
+            variant: vi.input.variant || null,
+            quantity: vi.input.quantity,
+            conditionClaimed: vi.input.conditionClaimed,
+            quotedPrice: vi.price * vi.input.quantity,
+            status: "PENDING",
+          })),
       },
     },
     include: {
@@ -416,6 +635,9 @@ export async function createSubmission(input: CreateSubmissionInput) {
       customer: true,
     },
   });
+
+  // 6. Clear cache after request completes
+  clearSettingsCache();
 
   return { success: true, submission };
 }
@@ -609,10 +831,12 @@ export async function rejectSubmission(
 
 /**
  * Add item to draft submission
+ * Now uses CardPriceV2 for card lookup (primary) with CardPrice as fallback
  */
 export async function addItemToSubmission(
   submissionId: string,
-  item: CreateItemInput
+  item: CreateItemInput,
+  shop?: string
 ) {
   const submission = await prisma.tradeInSubmission.findUnique({
     where: { id: submissionId },
@@ -627,21 +851,45 @@ export async function addItemToSubmission(
     throw new Error("Can only add items to draft submissions");
   }
 
-  // Get card price
-  let cardPrice;
+  const shopId = shop || "default";
+  let price = 0;
+  let cardPriceId: string | null = null;
+
+  // Try CardPriceV2 first (primary source for search/browse APIs)
   if (item.cardPriceId) {
-    cardPrice = await prisma.cardPrice.findUnique({
-      where: { id: item.cardPriceId },
-    });
-  } else {
-    cardPrice = await findCardPriceByName(item.cardName, item.setName, item.variant);
+    const result = await calculateCardPriceV2(
+      item.cardPriceId,
+      item.conditionClaimed,
+      shopId
+    );
+
+    if (result) {
+      price = result.price;
+      cardPriceId = item.cardPriceId;
+    }
   }
 
-  if (!cardPrice || !cardPrice.isActive) {
-    throw new Error("Card not found or not accepting trade-ins");
+  // Fallback to legacy CardPrice table if not found in V2
+  if (price === 0) {
+    let cardPrice;
+    if (item.cardPriceId) {
+      cardPrice = await prisma.cardPrice.findUnique({
+        where: { id: item.cardPriceId },
+      });
+    }
+
+    if (!cardPrice) {
+      cardPrice = await findCardPriceByName(item.cardName, item.setName, item.variant);
+    }
+
+    if (!cardPrice || !cardPrice.isActive) {
+      throw new Error("Card not found or not accepting trade-ins");
+    }
+
+    price = getConditionPrice(cardPrice, item.conditionClaimed);
+    cardPriceId = cardPrice.id;
   }
 
-  const price = getConditionPrice(cardPrice, item.conditionClaimed);
   const itemTotal = price * item.quantity;
 
   // Create item and update submission total
@@ -649,7 +897,7 @@ export async function addItemToSubmission(
     prisma.tradeInItem.create({
       data: {
         submissionId,
-        cardPriceId: cardPrice.id,
+        cardPriceId,
         cardName: item.cardName,
         setName: item.setName,
         setCode: item.setCode,

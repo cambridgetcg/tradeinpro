@@ -276,6 +276,9 @@ model TradeInSubmission {
   @@index([customerId])
   @@index([status])
   @@index([submissionNumber])
+  @@index([status, createdAt])      // Status filtering with sort
+  @@index([customerId, status])     // Customer's submissions by status
+  @@index([payoutType, status])     // Payout queue filtering
 }
 
 // Individual cards in a submission
@@ -313,6 +316,7 @@ model TradeInItem {
 
   @@index([submissionId])
   @@index([cardPriceId])
+  @@index([status, createdAt])      // Item status tracking
 }
 
 // Notes/communication on submissions
