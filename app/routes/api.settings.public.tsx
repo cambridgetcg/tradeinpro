@@ -27,11 +27,21 @@ interface ConditionConfig {
   multiplier: number;
 }
 
+interface ReturnAddress {
+  companyName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  postalCode?: string;
+  country?: string;
+}
+
 interface PublicSettingsResponse {
   conditions: ConditionConfig[];
   minimumValue: number;
   storeCreditBonus: number;
   freeShippingThreshold: number;
+  returnAddress?: ReturnAddress;
 }
 
 // ============================================================================
@@ -73,11 +83,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     ];
 
+    // Parse return address from JSON string if available
+    let returnAddress: ReturnAddress | undefined;
+    if (settings?.returnAddress) {
+      try {
+        returnAddress = JSON.parse(settings.returnAddress) as ReturnAddress;
+      } catch (e) {
+        console.warn("Failed to parse return address JSON:", e);
+      }
+    }
+
     const response: PublicSettingsResponse = {
       conditions,
       minimumValue: settings?.minimumSubmissionValue ?? DEFAULT_SETTINGS.minimumSubmissionValue,
       storeCreditBonus: (settings?.storeCreditBonusPercent ?? DEFAULT_SETTINGS.storeCreditBonusPercent) / 100,
       freeShippingThreshold: settings?.freeShippingMinimum ?? DEFAULT_SETTINGS.freeShippingMinimum,
+      returnAddress,
     };
 
     return jsonResponse(response);
