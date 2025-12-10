@@ -125,6 +125,36 @@
     "modal": {
       "add": "Add to Trade-In",
       "close": "Close"
+    },
+    "account": {
+      "title": "My Trade-Ins",
+      "subtitle": "View and manage your trade-in submissions",
+      "new_trade_in": "New Trade-In",
+      "loading": "Loading your submissions...",
+      "stats": {
+        "total": "Total Submissions",
+        "pending": "Pending",
+        "completed": "Completed",
+        "earned": "Total Earned"
+      },
+      "filter": {
+        "all": "All",
+        "pending": "Pending",
+        "completed": "Completed"
+      },
+      "empty": {
+        "title": "No Trade-Ins Yet",
+        "message": "You haven't submitted any trade-ins yet. Start by trading in your cards today!",
+        "cta": "Start Your First Trade-In"
+      },
+      "load_more": "Load More",
+      "guest": {
+        "message": "Sign in to view your trade-in history and track your submissions.",
+        "login": "Sign In",
+        "register": "Create Account",
+        "track_prompt": "Already submitted? You can also",
+        "track_link": "track a submission"
+      }
     }
   }
 }

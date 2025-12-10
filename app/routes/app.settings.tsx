@@ -22,6 +22,8 @@ import {
   RangeSlider,
   InlineGrid,
   Modal,
+  Select,
+  Badge,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -49,6 +51,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         ...settings,
         returnAddress: parseReturnAddress(settings.returnAddress),
       },
+      royalMailConfigured: !!process.env.ROYAL_MAIL_API_KEY,
     };
   } catch (error) {
     console.error("[app.settings loader] Error:", error instanceof Error ? error.message : error);
@@ -81,6 +84,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // Shipping
       freeShippingMinimum: Math.round(parseFloat(formData.get("freeShippingMinimum") as string) * 100) || undefined,
       shippingLabelEnabled: formData.get("shippingLabelEnabled") === "true",
+      royalMailEnabled: formData.get("royalMailEnabled") === "true",
+      royalMailService: (formData.get("royalMailService") as string) || undefined,
 
       // Notifications
       notifyOnSubmission: formData.get("notifyOnSubmission") === "true",
@@ -121,7 +126,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { settings } = useLoaderData<typeof loader>();
+  const { settings, royalMailConfigured } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -148,6 +153,8 @@ export default function Settings() {
     freeShippingMinimum: settings.freeShippingMinimum / 100,
     shippingLabelEnabled: settings.shippingLabelEnabled,
     returnAddress: settings.returnAddress as ReturnAddress | null,
+    royalMailEnabled: settings.royalMailEnabled,
+    royalMailService: settings.royalMailService,
 
     // Notifications
     notifyOnSubmission: settings.notifyOnSubmission,
@@ -186,6 +193,8 @@ export default function Settings() {
     // Shipping
     formData.set("freeShippingMinimum", formState.freeShippingMinimum.toString());
     formData.set("shippingLabelEnabled", formState.shippingLabelEnabled.toString());
+    formData.set("royalMailEnabled", formState.royalMailEnabled.toString());
+    formData.set("royalMailService", formState.royalMailService);
 
     // Return address
     if (formState.returnAddress) {
@@ -577,6 +586,66 @@ export default function Settings() {
                   autoComplete="off"
                 />
               </FormLayout>
+
+              <Divider />
+
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h3" variant="headingSm">
+                  Royal Mail Integration
+                </Text>
+                {royalMailConfigured ? (
+                  <Badge tone="success">API Key Configured</Badge>
+                ) : (
+                  <Badge tone="warning">API Key Not Set</Badge>
+                )}
+              </InlineStack>
+              <Text as="p" tone="subdued">
+                Generate prepaid shipping labels via Royal Mail Click &amp; Drop
+              </Text>
+
+              <FormLayout>
+                <Checkbox
+                  label="Enable Royal Mail labels"
+                  checked={formState.royalMailEnabled}
+                  onChange={(checked) =>
+                    setFormState({ ...formState, royalMailEnabled: checked })
+                  }
+                  helpText="When enabled, customers qualifying for free shipping can get prepaid Royal Mail labels"
+                  disabled={!royalMailConfigured}
+                />
+
+                <Select
+                  label="Royal Mail Service"
+                  options={[
+                    { label: "Tracked 48 (2-3 days)", value: "TPN" },
+                    { label: "Tracked 24 (Next day)", value: "TPS" },
+                  ]}
+                  value={formState.royalMailService}
+                  onChange={(value) =>
+                    setFormState({ ...formState, royalMailService: value })
+                  }
+                  disabled={!formState.royalMailEnabled}
+                  helpText="Shipping service used for prepaid labels"
+                />
+              </FormLayout>
+
+              {!royalMailConfigured && (
+                <Banner tone="info">
+                  <p>
+                    To enable Royal Mail integration, add your Click &amp; Drop API key
+                    to the environment variable <code>ROYAL_MAIL_API_KEY</code>.
+                    Get your API key from the{" "}
+                    <a
+                      href="https://auth.parcel.royalmail.com/account/login"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Royal Mail Click &amp; Drop dashboard
+                    </a>
+                    .
+                  </p>
+                </Banner>
+              )}
 
               <Divider />
 

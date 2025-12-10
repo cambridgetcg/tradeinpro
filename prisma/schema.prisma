@@ -250,6 +250,11 @@ model TradeInSubmission {
   // Payout preference
   payoutType       String   @default("STORE_CREDIT") // STORE_CREDIT, BANK, PAYPAL
 
+  // Bank details (for BANK payout type)
+  bankAccountName   String?  // Name on the account
+  bankSortCode      String?  // UK sort code (XX-XX-XX)
+  bankAccountNumber String?  // UK account number (8 digits)
+
   // Totals (in cents)
   quotedTotal      Int      @default(0)
   finalTotal       Int?
@@ -259,6 +264,20 @@ model TradeInSubmission {
   shippingMethod   String?  // PREPAID, SELF_SHIP, DROP_OFF
   trackingNumber   String?
   labelUrl         String?
+
+  // Customer shipping address (for prepaid labels)
+  shippingName        String?
+  shippingAddress1    String?
+  shippingAddress2    String?
+  shippingCity        String?
+  shippingPostalCode  String?
+  shippingCountry     String?  @default("GB")
+
+  // Royal Mail integration
+  royalMailOrderId    String?  // Royal Mail order reference
+  labelPdfBase64      String?  @db.Text // Base64 encoded PDF label
+  labelGeneratedAt    DateTime?
+  carrier             String?  // e.g., "Royal Mail"
 
   // Timestamps
   submittedAt      DateTime?
@@ -396,6 +415,10 @@ model TradeInSettings {
   freeShippingMinimum    Int     @default(5000) // Free label if > £50
   shippingLabelEnabled   Boolean @default(true)
   returnAddress          String? // JSON string
+
+  // Royal Mail integration
+  royalMailEnabled       Boolean @default(false)
+  royalMailService       String  @default("TPN") // TPN = Tracked 48
 
   // Notifications
   notifyOnSubmission     Boolean @default(true)

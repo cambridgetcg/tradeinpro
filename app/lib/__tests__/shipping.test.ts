@@ -509,6 +509,7 @@ describe("updateTrackingNumber", () => {
       data: {
         trackingNumber: "TRACK123",
         status: "IN_TRANSIT",
+        carrier: "Royal Mail",
       },
     });
   });

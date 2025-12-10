@@ -41,6 +41,7 @@ export interface SubmissionEmailContext {
   bonusAmount?: number;
   itemCount: number;
   payoutType: string;
+  hasAccount?: boolean; // Whether customer has a linked Shopify account
 }
 
 // ============================================================================
@@ -54,6 +55,38 @@ const FROM_EMAIL = process.env.FROM_EMAIL || "trade-in@cardforum.co.uk";
 
 function buildTrackingUrl(submissionNumber: string): string {
   return `${SHOP_URL}/apps/trade-in/track?number=${submissionNumber}`;
+}
+
+function buildAccountUrl(): string {
+  return `${SHOP_URL}/account`;
+}
+
+function buildCreateAccountUrl(email: string): string {
+  return `${SHOP_URL}/account/register?email=${encodeURIComponent(email)}`;
+}
+
+function buildAccountSection(ctx: { hasAccount?: boolean; customerEmail: string }): string {
+  if (ctx.hasAccount) {
+    return `
+      <div style="background: #f0f8ff; border: 1px solid #0066cc; padding: 15px; margin: 20px 0; text-align: center; border-radius: 4px;">
+        <p style="margin: 0 0 10px 0; font-weight: bold; color: #0066cc;">View All Your Trade-Ins</p>
+        <p style="margin: 0; font-size: 14px; color: #666;">Sign in to your account to see your complete trade-in history.</p>
+        <p style="margin: 10px 0 0 0;">
+          <a href="${buildAccountUrl()}" style="color: #0066cc; text-decoration: underline;">Go to My Account</a>
+        </p>
+      </div>
+    `;
+  } else {
+    return `
+      <div style="background: #fff8e8; border: 1px solid #cc8800; padding: 15px; margin: 20px 0; text-align: center; border-radius: 4px;">
+        <p style="margin: 0 0 10px 0; font-weight: bold; color: #996600;">Create an Account</p>
+        <p style="margin: 0; font-size: 14px; color: #666;">Create an account to easily track all your trade-ins in one place.</p>
+        <p style="margin: 10px 0 0 0;">
+          <a href="${buildCreateAccountUrl(ctx.customerEmail)}" style="color: #996600; text-decoration: underline;">Create Account</a>
+        </p>
+      </div>
+    `;
+  }
 }
 
 // ============================================================================
@@ -123,6 +156,8 @@ CardForum Team
           <li>Package your cards securely (use sleeves and top loaders)</li>
           <li>Drop off at your nearest Post Office</li>
         </ol>
+
+        ${buildAccountSection(ctx)}
       `,
       cta: { text: "Track Your Submission", url: trackingUrl },
     }),
@@ -148,6 +183,7 @@ Our team will now grade your cards. This usually takes 1-3 business days.
 We'll email you as soon as grading is complete.
 
 Track your submission: ${trackingUrl}
+${ctx.hasAccount ? `View all your trade-ins: ${buildAccountUrl()}` : `Create an account to track all submissions: ${buildCreateAccountUrl(ctx.customerEmail)}`}
 
 Thanks for trading with us!
 CardForum Team
@@ -165,6 +201,8 @@ CardForum Team
 
         <p>Our team will now grade your cards. This usually takes <strong>1-3 business days</strong>.</p>
         <p>We'll email you as soon as grading is complete.</p>
+
+        ${buildAccountSection(ctx)}
       `,
       cta: { text: "Track Your Submission", url: trackingUrl },
     }),
@@ -312,6 +350,8 @@ CardForum Team
           <p><strong>Bank Reference:</strong> ${ctx.bankReference}</p>
           <p style="color: #666;">Your transfer should arrive within 2-3 business days.</p>
         ` : ""}
+
+        ${buildAccountSection(ctx)}
       `,
       cta: { text: "Shop Now", url: SHOP_URL },
     }),
@@ -563,6 +603,7 @@ export async function buildSubmissionContext(
     bonusAmount: submission.bonusAmount || undefined,
     itemCount,
     payoutType: submission.payoutType,
+    hasAccount: !!customer?.shopifyCustomerId, // Has account if linked to Shopify
   };
 }
 

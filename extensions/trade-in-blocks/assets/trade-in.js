@@ -14,7 +14,8 @@
   const CONFIG = {
     debounceMs: 300,
     minSearchLength: 2,
-    minimumValue: 500, // pence
+    minimumValue: 500, // pence (£5)
+    freeShippingMinimum: 5000, // pence (£50) - qualifies for free prepaid label
     maxQuantity: 99,
     storeCreditBonus: 0.1, // 10%
     defaultImagePlaceholder: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 63 88' fill='%23e5e7eb'%3E%3Crect width='63' height='88' rx='4'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='8'%3ENo Image%3C/text%3E%3C/svg%3E",
@@ -86,10 +87,23 @@
       // Sections
       customerSection: form.querySelector("[data-customer-section]"),
       payoutSection: form.querySelector("[data-payout-section]"),
+      shippingSection: form.querySelector("[data-shipping-section]"),
       submitSection: form.querySelector("[data-submit-section]"),
+      // Shipping address fields
+      shippingName: form.querySelector("[data-shipping-name]"),
+      shippingAddress1: form.querySelector("[data-shipping-address1]"),
+      shippingAddress2: form.querySelector("[data-shipping-address2]"),
+      shippingCity: form.querySelector("[data-shipping-city]"),
+      shippingPostalCode: form.querySelector("[data-shipping-postal-code]"),
+      postcodeError: form.querySelector("[data-postcode-error]"),
       // Payout
       storeCreditTotal: form.querySelector("[data-store-credit-total]"),
       bankTotal: form.querySelector("[data-bank-total]"),
+      // Bank details
+      bankDetailsSection: form.querySelector("[data-bank-details]"),
+      bankAccountName: form.querySelector("[data-bank-account-name]"),
+      bankSortCode: form.querySelector("[data-bank-sort-code]"),
+      bankAccountNumber: form.querySelector("[data-bank-account-number]"),
       // Submit
       submitButton: form.querySelector("[data-submit-button]"),
       minimumNotice: form.querySelector("[data-minimum-notice]"),
@@ -791,6 +805,7 @@
       0
     );
     const meetsMinimum = quotedTotal >= CONFIG.minimumValue;
+    const qualifiesForFreeShipping = quotedTotal >= CONFIG.freeShippingMinimum;
 
     // Show/hide sections
     if (elements.customerSection) {
@@ -798,6 +813,10 @@
     }
     if (elements.payoutSection) {
       elements.payoutSection.hidden = !hasItems;
+    }
+    if (elements.shippingSection) {
+      // Only show shipping address form when qualifies for free shipping
+      elements.shippingSection.hidden = !hasItems || !qualifiesForFreeShipping;
     }
     if (elements.submitSection) {
       elements.submitSection.hidden = !hasItems;
@@ -842,19 +861,45 @@
       elements.emailError.hidden = true;
     }
 
+    // Check if shipping address is required (qualifies for free shipping)
+    const quotedTotal = state.cart.reduce(
+      (sum, item) => sum + item.pricePerItem * item.quantity,
+      0
+    );
+    const qualifiesForFreeShipping = quotedTotal >= CONFIG.freeShippingMinimum;
+
+    // Validate shipping address if shown
+    if (qualifiesForFreeShipping && elements.shippingSection) {
+      const shippingValidation = validateShippingAddress();
+      if (!shippingValidation.valid) {
+        return; // Validation function handles showing errors
+      }
+    }
+
+    // Get selected payout type
+    const formData = new FormData(elements.form);
+    const payoutType = formData.get("payoutType") || "STORE_CREDIT";
+
+    // Validate bank details if bank transfer selected
+    if (payoutType === "BANK") {
+      const bankValidation = validateBankDetails();
+      if (!bankValidation.valid) {
+        return; // Validation function handles showing errors
+      }
+    }
+
     state.isSubmitting = true;
 
     // Show loading
     showFormSection("loading");
 
-    // Gather form data
-    const formData = new FormData(elements.form);
+    // Note: formData already captured above for payoutType validation
 
     const submissionData = {
       email: formData.get("email") || undefined,
       firstName: formData.get("firstName") || undefined,
       lastName: formData.get("lastName") || undefined,
-      payoutType: formData.get("payoutType") || "STORE_CREDIT",
+      payoutType: payoutType,
       items: state.cart.map((item) => ({
         cardPriceId: item.cardId,
         cardName: item.cardName,
@@ -865,6 +910,25 @@
         conditionClaimed: item.condition,
       })),
     };
+
+    // Include bank details if bank transfer selected
+    if (payoutType === "BANK") {
+      submissionData.bankAccountName = elements.bankAccountName?.value.trim();
+      submissionData.bankSortCode = elements.bankSortCode?.value.trim();
+      submissionData.bankAccountNumber = elements.bankAccountNumber?.value.trim();
+    }
+
+    // Include shipping address if provided (for free prepaid label)
+    if (qualifiesForFreeShipping && elements.shippingName?.value.trim()) {
+      submissionData.shippingAddress = {
+        name: formData.get("shippingName")?.trim(),
+        address1: formData.get("shippingAddress1")?.trim(),
+        address2: formData.get("shippingAddress2")?.trim() || undefined,
+        city: formData.get("shippingCity")?.trim(),
+        postalCode: formData.get("shippingPostalCode")?.trim().toUpperCase(),
+        country: "GB",
+      };
+    }
 
     const result = await createSubmission(submissionData);
 
@@ -965,6 +1029,12 @@
     const storeCreditRadio = elements.form?.querySelector('[value="STORE_CREDIT"]');
     if (storeCreditRadio) storeCreditRadio.checked = true;
 
+    // Reset and hide bank details
+    if (elements.bankDetailsSection) elements.bankDetailsSection.hidden = true;
+    if (elements.bankAccountName) elements.bankAccountName.value = "";
+    if (elements.bankSortCode) elements.bankSortCode.value = "";
+    if (elements.bankAccountNumber) elements.bankAccountNumber.value = "";
+
     updateCart();
     showFormSection("form");
   }
@@ -985,6 +1055,148 @@
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  // ============================================================================
+  // Bank Details Handling
+  // ============================================================================
+
+  /**
+   * Show/hide bank details section based on payout type selection
+   */
+  function handlePayoutTypeChange(event) {
+    const payoutType = event.target.value;
+    const showBankDetails = payoutType === "BANK";
+
+    if (elements.bankDetailsSection) {
+      elements.bankDetailsSection.hidden = !showBankDetails;
+
+      // Clear fields when hiding
+      if (!showBankDetails) {
+        if (elements.bankAccountName) elements.bankAccountName.value = "";
+        if (elements.bankSortCode) elements.bankSortCode.value = "";
+        if (elements.bankAccountNumber) elements.bankAccountNumber.value = "";
+      }
+    }
+  }
+
+  /**
+   * Auto-format sort code as XX-XX-XX while typing
+   */
+  function formatSortCodeInput(event) {
+    const input = event.target;
+    let value = input.value.replace(/[^0-9]/g, ""); // Remove non-digits
+
+    // Limit to 6 digits
+    value = value.slice(0, 6);
+
+    // Format as XX-XX-XX
+    if (value.length > 4) {
+      value = value.slice(0, 2) + "-" + value.slice(2, 4) + "-" + value.slice(4);
+    } else if (value.length > 2) {
+      value = value.slice(0, 2) + "-" + value.slice(2);
+    }
+
+    input.value = value;
+  }
+
+  /**
+   * Validate bank details when bank transfer is selected
+   * Returns { valid: boolean, errors: string[] }
+   */
+  function validateBankDetails() {
+    const errors = [];
+
+    // Check account holder name
+    if (!elements.bankAccountName?.value.trim()) {
+      errors.push("Account holder name is required");
+      elements.bankAccountName?.focus();
+    }
+
+    // Validate sort code (6 digits)
+    const sortCode = elements.bankSortCode?.value.replace(/[-\s]/g, "");
+    if (!sortCode) {
+      errors.push("Sort code is required");
+      if (errors.length === 1) elements.bankSortCode?.focus();
+    } else if (!/^\d{6}$/.test(sortCode)) {
+      errors.push("Sort code must be 6 digits (e.g., 12-34-56)");
+      if (errors.length === 1) elements.bankSortCode?.focus();
+    }
+
+    // Validate account number (8 digits)
+    const accountNumber = elements.bankAccountNumber?.value.replace(/\s/g, "");
+    if (!accountNumber) {
+      errors.push("Account number is required");
+      if (errors.length === 1) elements.bankAccountNumber?.focus();
+    } else if (!/^\d{8}$/.test(accountNumber)) {
+      errors.push("Account number must be 8 digits");
+      if (errors.length === 1) elements.bankAccountNumber?.focus();
+    }
+
+    if (errors.length > 0) {
+      showError(errors[0]);
+      return { valid: false, errors };
+    }
+
+    return { valid: true, errors: [] };
+  }
+
+  /**
+   * Validate UK postcode format
+   * Accepts formats like: SW1A 1AA, SW1A1AA, M1 1AA, B1 1AA, etc.
+   */
+  function isValidUKPostcode(postcode) {
+    if (!postcode) return false;
+    // UK postcode regex - allows with or without space
+    const regex = /^([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})$/i;
+    return regex.test(postcode.trim());
+  }
+
+  /**
+   * Validate shipping address fields
+   * Returns { valid: boolean, errors: string[] }
+   */
+  function validateShippingAddress() {
+    const errors = [];
+
+    // Check required fields
+    if (!elements.shippingName?.value.trim()) {
+      errors.push("Name is required");
+      elements.shippingName?.focus();
+    }
+
+    if (!elements.shippingAddress1?.value.trim()) {
+      errors.push("Address line 1 is required");
+      if (errors.length === 1) elements.shippingAddress1?.focus();
+    }
+
+    if (!elements.shippingCity?.value.trim()) {
+      errors.push("City is required");
+      if (errors.length === 1) elements.shippingCity?.focus();
+    }
+
+    const postcode = elements.shippingPostalCode?.value.trim();
+    if (!postcode) {
+      errors.push("Postcode is required");
+      if (errors.length === 1) elements.shippingPostalCode?.focus();
+    } else if (!isValidUKPostcode(postcode)) {
+      errors.push("Please enter a valid UK postcode");
+      if (elements.postcodeError) {
+        elements.postcodeError.hidden = false;
+      }
+      if (errors.length === 1) elements.shippingPostalCode?.focus();
+    } else {
+      if (elements.postcodeError) {
+        elements.postcodeError.hidden = true;
+      }
+    }
+
+    if (errors.length > 0) {
+      showError(errors[0]);
+      return { valid: false, errors };
+    }
+
+    return { valid: true, errors: [] };
   }
 
   // ============================================================================
@@ -1119,6 +1331,19 @@
     // Cart clear
     if (elements.cartClear) {
       elements.cartClear.addEventListener("click", clearCart);
+    }
+
+    // Payout type change - show/hide bank details
+    const payoutRadios = elements.form?.querySelectorAll('input[name="payoutType"]');
+    if (payoutRadios) {
+      payoutRadios.forEach((radio) => {
+        radio.addEventListener("change", handlePayoutTypeChange);
+      });
+    }
+
+    // Sort code auto-formatting
+    if (elements.bankSortCode) {
+      elements.bankSortCode.addEventListener("input", formatSortCodeInput);
     }
 
     // Modal

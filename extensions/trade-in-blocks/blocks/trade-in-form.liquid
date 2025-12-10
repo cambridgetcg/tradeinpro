@@ -210,6 +210,143 @@
         </span>
       </label>
     </div>
+
+    {% comment %} Bank Details (shown when Bank Transfer is selected) {% endcomment %}
+    <div class="trade-in-bank-details" data-bank-details hidden>
+      <div class="trade-in-form__fields">
+        <div class="trade-in-form__field trade-in-form__field--full">
+          <label for="bank-account-name" class="trade-in-form__label">
+            {{ 'trade_in.bank.account_name' | t | default: 'Account Holder Name' }} <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="bank-account-name"
+            name="bankAccountName"
+            class="trade-in-form__input"
+            placeholder="John Smith"
+            data-bank-account-name
+          >
+        </div>
+        <div class="trade-in-form__field">
+          <label for="bank-sort-code" class="trade-in-form__label">
+            {{ 'trade_in.bank.sort_code' | t | default: 'Sort Code' }} <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="bank-sort-code"
+            name="bankSortCode"
+            class="trade-in-form__input"
+            placeholder="12-34-56"
+            maxlength="8"
+            data-bank-sort-code
+          >
+          <span class="trade-in-form__hint">{{ 'trade_in.bank.sort_code_hint' | t | default: '6 digits, e.g. 12-34-56' }}</span>
+        </div>
+        <div class="trade-in-form__field">
+          <label for="bank-account-number" class="trade-in-form__label">
+            {{ 'trade_in.bank.account_number' | t | default: 'Account Number' }} <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="bank-account-number"
+            name="bankAccountNumber"
+            class="trade-in-form__input"
+            placeholder="12345678"
+            maxlength="8"
+            data-bank-account-number
+          >
+          <span class="trade-in-form__hint">{{ 'trade_in.bank.account_number_hint' | t | default: '8 digits' }}</span>
+        </div>
+      </div>
+      <p class="trade-in-bank-details__notice">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="trade-in-bank-details__icon">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+        </svg>
+        {{ 'trade_in.bank.security_notice' | t | default: 'Your bank details are securely stored and only used to process your payout.' }}
+      </p>
+    </div>
+  </div>
+
+  {% comment %} Shipping Address (shown when qualifies for free shipping) {% endcomment %}
+  <div class="trade-in-form__section" data-shipping-section hidden>
+    <h3 class="trade-in-form__section-title">{{ 'trade_in.shipping.title' | t | default: 'Shipping Address' }}</h3>
+    <p class="trade-in-form__section-desc trade-in-shipping__notice">
+      <svg viewBox="0 0 20 20" fill="currentColor" class="trade-in-shipping__icon">
+        <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+      </svg>
+      {{ 'trade_in.shipping.free_label' | t | default: 'Your submission qualifies for a free prepaid shipping label!' }}
+    </p>
+
+    <div class="trade-in-form__fields">
+      <div class="trade-in-form__field trade-in-form__field--full">
+        <label for="shipping-name" class="trade-in-form__label">
+          {{ 'trade_in.shipping.name' | t | default: 'Full Name' }} <span class="required">*</span>
+        </label>
+        <input
+          type="text"
+          id="shipping-name"
+          name="shippingName"
+          class="trade-in-form__input"
+          required
+          data-shipping-name
+        >
+      </div>
+      <div class="trade-in-form__field trade-in-form__field--full">
+        <label for="shipping-address1" class="trade-in-form__label">
+          {{ 'trade_in.shipping.address1' | t | default: 'Address Line 1' }} <span class="required">*</span>
+        </label>
+        <input
+          type="text"
+          id="shipping-address1"
+          name="shippingAddress1"
+          class="trade-in-form__input"
+          required
+          data-shipping-address1
+        >
+      </div>
+      <div class="trade-in-form__field trade-in-form__field--full">
+        <label for="shipping-address2" class="trade-in-form__label">
+          {{ 'trade_in.shipping.address2' | t | default: 'Address Line 2' }}
+        </label>
+        <input
+          type="text"
+          id="shipping-address2"
+          name="shippingAddress2"
+          class="trade-in-form__input"
+          data-shipping-address2
+        >
+      </div>
+      <div class="trade-in-form__field">
+        <label for="shipping-city" class="trade-in-form__label">
+          {{ 'trade_in.shipping.city' | t | default: 'City' }} <span class="required">*</span>
+        </label>
+        <input
+          type="text"
+          id="shipping-city"
+          name="shippingCity"
+          class="trade-in-form__input"
+          required
+          data-shipping-city
+        >
+      </div>
+      <div class="trade-in-form__field">
+        <label for="shipping-postal-code" class="trade-in-form__label">
+          {{ 'trade_in.shipping.postal_code' | t | default: 'Postcode' }} <span class="required">*</span>
+        </label>
+        <input
+          type="text"
+          id="shipping-postal-code"
+          name="shippingPostalCode"
+          class="trade-in-form__input"
+          required
+          placeholder="SW1A 1AA"
+          data-shipping-postal-code
+        >
+        <span class="trade-in-form__error" data-postcode-error hidden>
+          {{ 'trade_in.shipping.postcode_error' | t | default: 'Please enter a valid UK postcode' }}
+        </span>
+      </div>
+    </div>
   </div>
 
   {% comment %} Submit Section {% endcomment %}

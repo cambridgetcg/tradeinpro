@@ -29,6 +29,10 @@ export interface CreateSubmissionInput {
   lastName?: string;
   payoutType: PayoutTypeValue;
   items: CreateItemInput[];
+  // Bank details (required when payoutType is BANK)
+  bankAccountName?: string;
+  bankSortCode?: string;
+  bankAccountNumber?: string;
 }
 
 export interface SubmissionValidation {
@@ -621,6 +625,12 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
       payoutType: input.payoutType,
       quotedTotal: totalValue,
       bonusAmount,
+      // Bank details (only stored when payoutType is BANK)
+      ...(input.payoutType === PayoutType.BANK && {
+        bankAccountName: input.bankAccountName,
+        bankSortCode: input.bankSortCode,
+        bankAccountNumber: input.bankAccountNumber,
+      }),
       items: {
         create: validatedItems
           .filter(vi => vi.isValid)

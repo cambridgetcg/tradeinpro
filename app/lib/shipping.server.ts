@@ -1,11 +1,21 @@
 /**
  * Shipping label generation and instructions
- * For MVP: Generates printable shipping instructions and self-ship guidance
- * Future: Integrate with Royal Mail / Evri / DPD APIs
+ * Integrates with Royal Mail Click & Drop API for prepaid labels
+ * Falls back to self-ship instructions when Royal Mail is not configured
  */
 
 import prisma from "../db.server";
 import { formatPrice } from "./constants";
+import {
+  createRoyalMailService,
+  estimatePackageWeight,
+  getPackageFormat,
+  formatUKPostcode,
+  isValidUKPostcode,
+  ROYAL_MAIL_SERVICES,
+  type RoyalMailResult,
+  type RoyalMailOrder,
+} from "../services/royalMailApi.server";
 
 // ============================================================================
 // Types
@@ -60,6 +70,8 @@ export interface ShippingSettings {
   shippingLabelEnabled: boolean;
   freeShippingMinimum: number;
   returnAddress: ReturnAddress | null;
+  royalMailEnabled: boolean;
+  royalMailService: string;
 }
 
 // ============================================================================
@@ -85,6 +97,8 @@ export async function getShippingSettings(): Promise<ShippingSettings> {
     shippingLabelEnabled: settings?.shippingLabelEnabled ?? true,
     freeShippingMinimum: settings?.freeShippingMinimum ?? 5000,
     returnAddress,
+    royalMailEnabled: settings?.royalMailEnabled ?? false,
+    royalMailService: settings?.royalMailService ?? "TPN",
   };
 }
 
@@ -201,15 +215,15 @@ function getCountryName(code: string): string {
 
 /**
  * Generate a shipping label for a submission
- * MVP: Creates a tracking reference and updates submission
- * Future: Integrate with carrier API for actual labels
+ * Uses Royal Mail API if configured and submission qualifies for free shipping
+ * Falls back to self-ship instructions otherwise
  */
 export async function generateShippingLabel(
   request: ShippingLabelRequest
 ): Promise<ShippingLabel> {
   const submission = await prisma.tradeInSubmission.findUnique({
     where: { id: request.submissionId },
-    include: { items: true },
+    include: { items: true, customer: true },
   });
 
   if (!submission) {
@@ -226,16 +240,57 @@ export async function generateShippingLabel(
     throw new Error("Return address not configured. Please contact support.");
   }
 
-  // Generate tracking number
+  // Check if submission qualifies for free prepaid shipping
+  const qualifiesForFree = submission.quotedTotal >= settings.freeShippingMinimum;
+
+  // Try Royal Mail API if:
+  // 1. Royal Mail is enabled in settings
+  // 2. Customer provided a valid address
+  // 3. Submission qualifies for free shipping
+  if (
+    settings.royalMailEnabled &&
+    qualifiesForFree &&
+    request.customerAddress &&
+    isValidUKPostcode(request.customerAddress.postalCode)
+  ) {
+    const royalMailResult = await generateRoyalMailLabel(
+      submission,
+      request.customerAddress,
+      settings
+    );
+
+    if (royalMailResult.success) {
+      return royalMailResult.data;
+    }
+
+    // Log the error but fall through to self-ship
+    console.warn("Royal Mail label generation failed:", royalMailResult.error);
+  }
+
+  // Fallback: Generate internal tracking and HTML label
   const trackingNumber = generateTrackingNumber(submission.submissionNumber);
+
+  // Store customer address if provided
+  const addressUpdate = request.customerAddress
+    ? {
+        shippingName: request.customerAddress.name,
+        shippingAddress1: request.customerAddress.address1,
+        shippingAddress2: request.customerAddress.address2 || null,
+        shippingCity: request.customerAddress.city,
+        shippingPostalCode: request.customerAddress.postalCode,
+        shippingCountry: request.customerAddress.country || "GB",
+      }
+    : {};
 
   // Update submission with shipping info
   await prisma.tradeInSubmission.update({
     where: { id: request.submissionId },
     data: {
-      shippingMethod: "PREPAID",
+      shippingMethod: qualifiesForFree ? "PREPAID" : "SELF_SHIP",
       trackingNumber,
       labelUrl: `/api/shipping/label/${request.submissionId}`,
+      carrier: "Royal Mail",
+      ...addressUpdate,
     },
   });
 
@@ -244,13 +299,167 @@ export async function generateShippingLabel(
     trackingNumber,
     carrier: "Royal Mail Tracked",
     estimatedDelivery: "2-3 business days",
-    instructions: [
-      "Print this shipping label and attach it to your package",
-      "Drop off at any Royal Mail Post Office or collection point",
-      `Your tracking number is: ${trackingNumber}`,
-      "Keep your receipt as proof of postage",
-    ],
+    instructions: qualifiesForFree
+      ? [
+          "Print this shipping label and attach it to your package",
+          "Drop off at any Royal Mail Post Office or collection point",
+          `Your tracking number is: ${trackingNumber}`,
+          "Keep your receipt as proof of postage",
+        ]
+      : [
+          "This submission does not qualify for free shipping",
+          `Minimum value for free shipping: ${formatPrice(settings.freeShippingMinimum)}`,
+          "Please use self-ship instructions instead",
+        ],
   };
+}
+
+/**
+ * Generate a Royal Mail shipping label via the Click & Drop API
+ */
+async function generateRoyalMailLabel(
+  submission: {
+    id: string;
+    submissionNumber: string;
+    quotedTotal: number;
+    items: { quantity: number }[];
+    customer: { email: string; firstName?: string | null; lastName?: string | null } | null;
+  },
+  customerAddress: CustomerAddress,
+  settings: ShippingSettings
+): Promise<RoyalMailResult<ShippingLabel>> {
+  const royalMail = createRoyalMailService();
+
+  if (!royalMail || !royalMail.isConfigured()) {
+    return {
+      success: false,
+      error: {
+        code: "NOT_CONFIGURED",
+        message: "Royal Mail API is not configured",
+      },
+    };
+  }
+
+  if (!settings.returnAddress) {
+    return {
+      success: false,
+      error: {
+        code: "NO_RETURN_ADDRESS",
+        message: "Return address not configured",
+      },
+    };
+  }
+
+  const itemCount = submission.items.reduce((sum, item) => sum + item.quantity, 0);
+  const weight = estimatePackageWeight(itemCount);
+  const packageFormat = getPackageFormat(itemCount);
+  const customerName = customerAddress.name ||
+    `${submission.customer?.firstName || ""} ${submission.customer?.lastName || ""}`.trim() ||
+    "Customer";
+
+  try {
+    const result = await royalMail.createOrder({
+      recipient: {
+        fullName: customerName,
+        address: {
+          addressLine1: customerAddress.address1,
+          addressLine2: customerAddress.address2,
+          city: customerAddress.city,
+          county: customerAddress.province,
+          postcode: formatUKPostcode(customerAddress.postalCode),
+          countryCode: customerAddress.country || "GB",
+        },
+        emailAddress: submission.customer?.email,
+      },
+      sender: {
+        tradingName: settings.returnAddress.company || settings.returnAddress.name,
+        companyName: settings.returnAddress.company,
+        address: {
+          addressLine1: settings.returnAddress.address1,
+          addressLine2: settings.returnAddress.address2,
+          city: settings.returnAddress.city,
+          county: settings.returnAddress.province,
+          postcode: formatUKPostcode(settings.returnAddress.postalCode),
+          countryCode: settings.returnAddress.country || "GB",
+        },
+        telephoneNumber: settings.returnAddress.phone,
+      },
+      orderReference: submission.submissionNumber,
+      orderDate: new Date().toISOString(),
+      subtotal: submission.quotedTotal / 100, // Convert pence to pounds
+      shippingCostCharged: 0,
+      total: submission.quotedTotal / 100,
+      currencyCode: "GBP",
+      weightInGrams: weight,
+      packageFormatIdentifier: packageFormat,
+      serviceCode: settings.royalMailService || ROYAL_MAIL_SERVICES.TRACKED_48,
+      includeLabelInResponse: true,
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    const order = result.data;
+    const trackingNumber = order.trackingNumber || order.orderIdentifier;
+    const labelPdf = order.label?.labelData || null;
+
+    // Update submission with Royal Mail data
+    await prisma.tradeInSubmission.update({
+      where: { id: submission.id },
+      data: {
+        shippingMethod: "PREPAID",
+        trackingNumber,
+        royalMailOrderId: order.orderIdentifier,
+        labelPdfBase64: labelPdf,
+        labelGeneratedAt: new Date(),
+        labelUrl: `/api/shipping/label/${submission.id}`,
+        carrier: "Royal Mail",
+        // Store customer address
+        shippingName: customerName,
+        shippingAddress1: customerAddress.address1,
+        shippingAddress2: customerAddress.address2 || null,
+        shippingCity: customerAddress.city,
+        shippingPostalCode: formatUKPostcode(customerAddress.postalCode),
+        shippingCountry: customerAddress.country || "GB",
+      },
+    });
+
+    // Determine service name for display
+    const serviceName =
+      settings.royalMailService === ROYAL_MAIL_SERVICES.TRACKED_24
+        ? "Royal Mail Tracked 24"
+        : "Royal Mail Tracked 48";
+
+    const estimatedDelivery =
+      settings.royalMailService === ROYAL_MAIL_SERVICES.TRACKED_24
+        ? "Next business day"
+        : "2-3 business days";
+
+    return {
+      success: true,
+      data: {
+        labelUrl: `/api/shipping/label/${submission.id}`,
+        trackingNumber,
+        carrier: serviceName,
+        estimatedDelivery,
+        instructions: [
+          "Print the attached shipping label",
+          "Attach securely to your package",
+          "Drop off at any Royal Mail Post Office or collection point",
+          `Track your shipment: ${trackingNumber}`,
+        ],
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: {
+        code: "API_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+    };
+  }
 }
 
 /**
@@ -372,9 +581,7 @@ export async function updateTrackingNumber(
     data: {
       trackingNumber,
       status: "IN_TRANSIT",
-      ...(carrier && {
-        // Store carrier in a note since we don't have a carrier field
-      }),
+      carrier: carrier || submission.carrier || "Royal Mail",
     },
   });
 

@@ -118,6 +118,10 @@ export async function action({ request }: ActionFunctionArgs) {
         lastName: body.lastName ? sanitizeString(body.lastName, 100) : undefined,
         payoutType: body.payoutType as PayoutTypeValue,
         items,
+        // Bank details (sanitized and normalized)
+        bankAccountName: body.bankAccountName ? sanitizeString(body.bankAccountName, 100) : undefined,
+        bankSortCode: body.bankSortCode ? body.bankSortCode.replace(/[-\s]/g, "") : undefined,
+        bankAccountNumber: body.bankAccountNumber ? body.bankAccountNumber.replace(/\s/g, "") : undefined,
       },
       context.shop // Pass shop for settings lookup
     );
@@ -174,6 +178,10 @@ interface CreateSubmissionRequest {
     quantity: number;
     conditionClaimed: string;
   }>;
+  // Bank details (required when payoutType is BANK)
+  bankAccountName?: string;
+  bankSortCode?: string;
+  bankAccountNumber?: string;
 }
 
 const VALID_PAYOUT_TYPES = ["STORE_CREDIT", "BANK", "PAYPAL"];
@@ -194,6 +202,31 @@ function validateCreateSubmissionRequest(body: any): { valid: boolean; errors: s
   // Payout type validation
   if (!body.payoutType || !VALID_PAYOUT_TYPES.includes(body.payoutType)) {
     errors.push(`Payout type must be one of: ${VALID_PAYOUT_TYPES.join(", ")}`);
+  }
+
+  // Bank details validation (required when payoutType is BANK)
+  if (body.payoutType === "BANK") {
+    if (!body.bankAccountName || typeof body.bankAccountName !== "string" || !body.bankAccountName.trim()) {
+      errors.push("Account holder name is required for bank transfers");
+    }
+    if (!body.bankSortCode || typeof body.bankSortCode !== "string") {
+      errors.push("Sort code is required for bank transfers");
+    } else {
+      // Validate UK sort code format (XX-XX-XX or XXXXXX)
+      const sortCodeClean = body.bankSortCode.replace(/[-\s]/g, "");
+      if (!/^\d{6}$/.test(sortCodeClean)) {
+        errors.push("Sort code must be 6 digits (e.g., 12-34-56 or 123456)");
+      }
+    }
+    if (!body.bankAccountNumber || typeof body.bankAccountNumber !== "string") {
+      errors.push("Account number is required for bank transfers");
+    } else {
+      // Validate UK account number (8 digits)
+      const accountNumberClean = body.bankAccountNumber.replace(/\s/g, "");
+      if (!/^\d{8}$/.test(accountNumberClean)) {
+        errors.push("Account number must be 8 digits");
+      }
+    }
   }
 
   // Items validation

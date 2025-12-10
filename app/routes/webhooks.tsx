@@ -87,6 +87,10 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     // Route to appropriate handler
     switch (topic) {
+      case "customers/create":
+        await handleCustomerCreate(payload);
+        break;
+
       case "customers/update":
         await handleCustomerUpdate(payload);
         break;
@@ -128,7 +132,71 @@ export async function action({ request }: ActionFunctionArgs) {
 // ============================================================================
 
 /**
+ * Handle customer create - link guest submissions when a new account is created
+ * This is important for linking previous guest trade-in submissions
+ */
+async function handleCustomerCreate(payload: any): Promise<void> {
+  const shopifyId = String(payload.id);
+  const email = payload.email?.toLowerCase();
+  const firstName = payload.first_name;
+  const lastName = payload.last_name;
+  const phone = payload.phone;
+
+  if (!email) {
+    console.log(`New customer ${shopifyId} has no email, skipping`);
+    return;
+  }
+
+  // Check if there's an existing guest customer with this email
+  const guestCustomer = await prisma.customer.findFirst({
+    where: {
+      email: email,
+      shopifyCustomerId: null, // Guest customer (no Shopify link)
+    },
+    include: {
+      _count: { select: { submissions: true } },
+    },
+  });
+
+  if (guestCustomer) {
+    // Link the guest customer to this new Shopify account
+    await prisma.customer.update({
+      where: { id: guestCustomer.id },
+      data: {
+        shopifyCustomerId: shopifyId,
+        firstName: firstName || guestCustomer.firstName,
+        lastName: lastName || guestCustomer.lastName,
+        phone: phone || guestCustomer.phone,
+      },
+    });
+    console.log(`Guest customer ${guestCustomer.id} with ${guestCustomer._count.submissions} submissions linked to new Shopify account ${shopifyId}`);
+  } else {
+    // Check if there's already a customer with this Shopify ID (shouldn't happen but be safe)
+    const existingCustomer = await prisma.customer.findUnique({
+      where: { shopifyCustomerId: shopifyId },
+    });
+
+    if (!existingCustomer) {
+      // Create a new customer record
+      await prisma.customer.create({
+        data: {
+          shopifyCustomerId: shopifyId,
+          email: email,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          phone: phone || null,
+        },
+      });
+      console.log(`Created new customer for Shopify account ${shopifyId}`);
+    } else {
+      console.log(`Customer for Shopify account ${shopifyId} already exists`);
+    }
+  }
+}
+
+/**
  * Handle customer update - sync email and name changes
+ * Also handles account merging when a guest creates an account with same email
  */
 async function handleCustomerUpdate(payload: any): Promise<void> {
   const shopifyId = String(payload.id);
@@ -138,27 +206,60 @@ async function handleCustomerUpdate(payload: any): Promise<void> {
   const phone = payload.phone;
 
   // Find customer by Shopify ID
-  const customer = await prisma.customer.findUnique({
+  let customer = await prisma.customer.findUnique({
     where: { shopifyCustomerId: shopifyId },
   });
 
-  if (!customer) {
-    console.log(`Customer ${shopifyId} not found in database, skipping update`);
-    return;
+  if (customer) {
+    // Existing linked customer - just update their data
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        ...(email && { email }),
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(phone !== undefined && { phone }),
+      },
+    });
+    console.log(`Customer ${shopifyId} updated`);
+  } else if (email) {
+    // No customer with this Shopify ID - check if there's a guest customer with this email
+    // This handles the case where a guest created submissions then later created an account
+    const guestCustomer = await prisma.customer.findFirst({
+      where: {
+        email: email,
+        shopifyCustomerId: null, // Guest customer (no Shopify link)
+      },
+    });
+
+    if (guestCustomer) {
+      // Link the guest customer to this Shopify account
+      customer = await prisma.customer.update({
+        where: { id: guestCustomer.id },
+        data: {
+          shopifyCustomerId: shopifyId,
+          ...(firstName !== undefined && { firstName: firstName || guestCustomer.firstName }),
+          ...(lastName !== undefined && { lastName: lastName || guestCustomer.lastName }),
+          ...(phone !== undefined && { phone }),
+        },
+      });
+      console.log(`Guest customer ${guestCustomer.id} linked to Shopify account ${shopifyId}`);
+    } else {
+      // Create a new customer record linked to this Shopify account
+      customer = await prisma.customer.create({
+        data: {
+          shopifyCustomerId: shopifyId,
+          email: email,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          phone: phone || null,
+        },
+      });
+      console.log(`Created new customer for Shopify account ${shopifyId}`);
+    }
+  } else {
+    console.log(`Customer ${shopifyId} not found and no email provided, skipping`);
   }
-
-  // Update customer data
-  await prisma.customer.update({
-    where: { id: customer.id },
-    data: {
-      ...(email && { email }),
-      ...(firstName !== undefined && { firstName }),
-      ...(lastName !== undefined && { lastName }),
-      ...(phone !== undefined && { phone }),
-    },
-  });
-
-  console.log(`Customer ${shopifyId} updated`);
 }
 
 /**

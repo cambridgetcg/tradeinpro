@@ -47,6 +47,8 @@ export interface TradeInSettingsInput {
   freeShippingMinimum?: number;
   shippingLabelEnabled?: boolean;
   returnAddress?: ReturnAddress | null;
+  royalMailEnabled?: boolean;
+  royalMailService?: string;
 
   // Notifications
   notifyOnSubmission?: boolean;
@@ -81,6 +83,8 @@ export const DEFAULT_SETTINGS: Required<Omit<TradeInSettingsInput, "returnAddres
   freeShippingMinimum: 5000,
   shippingLabelEnabled: true,
   returnAddress: null,
+  royalMailEnabled: false,
+  royalMailService: "TPN",
   notifyOnSubmission: true,
   notifyOnReceived: true,
   notifyOnGraded: true,
@@ -388,6 +392,12 @@ export async function updateSettings(
   }
   if (input.returnAddress !== undefined) {
     data.returnAddress = input.returnAddress ? JSON.stringify(input.returnAddress) : null;
+  }
+  if (input.royalMailEnabled !== undefined) {
+    data.royalMailEnabled = input.royalMailEnabled;
+  }
+  if (input.royalMailService !== undefined) {
+    data.royalMailService = input.royalMailService;
   }
 
   // Notifications
