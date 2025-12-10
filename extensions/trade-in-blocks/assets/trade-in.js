@@ -1068,8 +1068,12 @@
     const payoutType = event.target.value;
     const showBankDetails = payoutType === "BANK";
 
+    console.log("[trade-in] Payout type changed:", payoutType, "Show bank details:", showBankDetails);
+    console.log("[trade-in] Bank details section element:", elements.bankDetailsSection);
+
     if (elements.bankDetailsSection) {
       elements.bankDetailsSection.hidden = !showBankDetails;
+      console.log("[trade-in] Bank details section hidden:", elements.bankDetailsSection.hidden);
 
       // Clear fields when hiding
       if (!showBankDetails) {
@@ -1077,6 +1081,8 @@
         if (elements.bankSortCode) elements.bankSortCode.value = "";
         if (elements.bankAccountNumber) elements.bankAccountNumber.value = "";
       }
+    } else {
+      console.warn("[trade-in] Bank details section element not found!");
     }
   }
 
@@ -1335,6 +1341,8 @@
 
     // Payout type change - show/hide bank details
     const payoutRadios = elements.form?.querySelectorAll('input[name="payoutType"]');
+    console.log("[trade-in] Found payout radios:", payoutRadios?.length || 0);
+    console.log("[trade-in] Bank details section at init:", elements.bankDetailsSection);
     if (payoutRadios) {
       payoutRadios.forEach((radio) => {
         radio.addEventListener("change", handlePayoutTypeChange);
