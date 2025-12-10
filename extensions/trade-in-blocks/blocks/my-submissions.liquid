@@ -13,7 +13,8 @@
         <h2 class="trade-in-account__title">{{ block.settings.title | default: 'trade_in.account.title' | t }}</h2>
         <p class="trade-in-account__subtitle">{{ 'trade_in.account.subtitle' | t }}</p>
       </div>
-      <a href="{{ block.settings.trade_in_page | default: '/pages/trade-in' }}" class="trade-in-btn trade-in-btn--primary">
+      {% assign trade_in_url = block.settings.trade_in_page | default: '/pages/trade-in' %}
+      <a href="{{ trade_in_url }}" class="trade-in-btn trade-in-btn--primary">
         <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
           <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
         </svg>
@@ -69,7 +70,7 @@
       </svg>
       <h3>{{ 'trade_in.account.empty.title' | t }}</h3>
       <p>{{ 'trade_in.account.empty.message' | t }}</p>
-      <a href="{{ block.settings.trade_in_page | default: '/pages/trade-in' }}" class="trade-in-btn trade-in-btn--primary">
+      <a href="{{ trade_in_url }}" class="trade-in-btn trade-in-btn--primary">
         {{ 'trade_in.account.empty.cta' | t }}
       </a>
     </div>
@@ -139,14 +140,12 @@
     {
       "type": "url",
       "id": "trade_in_page",
-      "label": "Trade-In Page URL",
-      "default": "/pages/trade-in"
+      "label": "Trade-In Page URL"
     },
     {
       "type": "url",
       "id": "track_page",
-      "label": "Track Page URL",
-      "default": "/pages/track-trade-in"
+      "label": "Track Page URL"
     }
   ]
 }

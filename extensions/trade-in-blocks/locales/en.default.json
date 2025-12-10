@@ -52,6 +52,14 @@
       "bonus": "+{{ percent }}% bonus",
       "recommended": "Recommended"
     },
+    "bank": {
+      "account_name": "Account Holder Name",
+      "sort_code": "Sort Code",
+      "sort_code_hint": "6 digits, e.g. 12-34-56",
+      "account_number": "Account Number",
+      "account_number_hint": "8 digits",
+      "security_notice": "Your bank details are securely stored and only used to process your payout."
+    },
     "summary": {
       "items": "Items",
       "cards": "cards",
