@@ -655,8 +655,21 @@
   border-radius: var(--ti-radius);
 }
 
+.trade-in-bank-details__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: var(--ti-text);
+}
+
+.trade-in-bank-details__subtitle {
+  font-size: 0.875rem;
+  color: var(--ti-text-muted);
+  margin: 0 0 1rem;
+}
+
 .trade-in-bank-details .trade-in-form__fields {
-  margin-bottom: 1rem;
+  margin-bottom: 0;
 }
 
 .trade-in-bank-details .trade-in-form__hint {

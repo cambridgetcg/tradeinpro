@@ -177,6 +177,57 @@
         </div>
       </div>
     {% endif %}
+
+    {% comment %} Bank Details (always visible, required for bank transfer) {% endcomment %}
+    <div class="trade-in-bank-details" data-bank-details>
+      <h4 class="trade-in-bank-details__title">{{ 'trade_in.bank.title' | t | default: 'Bank Details' }}</h4>
+      <p class="trade-in-bank-details__subtitle">{{ 'trade_in.bank.subtitle' | t | default: 'Required if you choose bank transfer as your payout method' }}</p>
+      <div class="trade-in-form__fields">
+        <div class="trade-in-form__field trade-in-form__field--full">
+          <label for="bank-account-name" class="trade-in-form__label">
+            {{ 'trade_in.bank.account_name' | t | default: 'Account Holder Name' }}
+          </label>
+          <input
+            type="text"
+            id="bank-account-name"
+            name="bankAccountName"
+            class="trade-in-form__input"
+            placeholder="John Smith"
+            data-bank-account-name
+          >
+        </div>
+        <div class="trade-in-form__field">
+          <label for="bank-sort-code" class="trade-in-form__label">
+            {{ 'trade_in.bank.sort_code' | t | default: 'Sort Code' }}
+          </label>
+          <input
+            type="text"
+            id="bank-sort-code"
+            name="bankSortCode"
+            class="trade-in-form__input"
+            placeholder="12-34-56"
+            maxlength="8"
+            data-bank-sort-code
+          >
+          <span class="trade-in-form__hint">{{ 'trade_in.bank.sort_code_hint' | t | default: '6 digits, e.g. 12-34-56' }}</span>
+        </div>
+        <div class="trade-in-form__field">
+          <label for="bank-account-number" class="trade-in-form__label">
+            {{ 'trade_in.bank.account_number' | t | default: 'Account Number' }}
+          </label>
+          <input
+            type="text"
+            id="bank-account-number"
+            name="bankAccountNumber"
+            class="trade-in-form__input"
+            placeholder="12345678"
+            maxlength="8"
+            data-bank-account-number
+          >
+          <span class="trade-in-form__hint">{{ 'trade_in.bank.account_number_hint' | t | default: '8 digits' }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 
   {% comment %} Payout Selection {% endcomment %}
@@ -209,61 +260,6 @@
           <span class="trade-in-payout-option__total" data-bank-total></span>
         </span>
       </label>
-    </div>
-
-    {% comment %} Bank Details (shown when Bank Transfer is selected) {% endcomment %}
-    <div class="trade-in-bank-details" data-bank-details hidden>
-      <div class="trade-in-form__fields">
-        <div class="trade-in-form__field trade-in-form__field--full">
-          <label for="bank-account-name" class="trade-in-form__label">
-            {{ 'trade_in.bank.account_name' | t | default: 'Account Holder Name' }} <span class="required">*</span>
-          </label>
-          <input
-            type="text"
-            id="bank-account-name"
-            name="bankAccountName"
-            class="trade-in-form__input"
-            placeholder="John Smith"
-            data-bank-account-name
-          >
-        </div>
-        <div class="trade-in-form__field">
-          <label for="bank-sort-code" class="trade-in-form__label">
-            {{ 'trade_in.bank.sort_code' | t | default: 'Sort Code' }} <span class="required">*</span>
-          </label>
-          <input
-            type="text"
-            id="bank-sort-code"
-            name="bankSortCode"
-            class="trade-in-form__input"
-            placeholder="12-34-56"
-            maxlength="8"
-            data-bank-sort-code
-          >
-          <span class="trade-in-form__hint">{{ 'trade_in.bank.sort_code_hint' | t | default: '6 digits, e.g. 12-34-56' }}</span>
-        </div>
-        <div class="trade-in-form__field">
-          <label for="bank-account-number" class="trade-in-form__label">
-            {{ 'trade_in.bank.account_number' | t | default: 'Account Number' }} <span class="required">*</span>
-          </label>
-          <input
-            type="text"
-            id="bank-account-number"
-            name="bankAccountNumber"
-            class="trade-in-form__input"
-            placeholder="12345678"
-            maxlength="8"
-            data-bank-account-number
-          >
-          <span class="trade-in-form__hint">{{ 'trade_in.bank.account_number_hint' | t | default: '8 digits' }}</span>
-        </div>
-      </div>
-      <p class="trade-in-bank-details__notice">
-        <svg viewBox="0 0 20 20" fill="currentColor" class="trade-in-bank-details__icon">
-          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-        </svg>
-        {{ 'trade_in.bank.security_notice' | t | default: 'Your bank details are securely stored and only used to process your payout.' }}
-      </p>
     </div>
   </div>
 

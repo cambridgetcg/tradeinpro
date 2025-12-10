@@ -53,6 +53,8 @@
       "recommended": "Recommended"
     },
     "bank": {
+      "title": "Bank Details",
+      "subtitle": "Required if you choose bank transfer as your payout method",
       "account_name": "Account Holder Name",
       "sort_code": "Sort Code",
       "sort_code_hint": "6 digits, e.g. 12-34-56",
