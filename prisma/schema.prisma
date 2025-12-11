@@ -91,6 +91,9 @@ model CardPriceV2 {
   variantType        String?   @map("variant_type") @db.VarChar(50) // null for base, 'parallel', 'manga', 'sp', etc.
   rarity             String?   @db.VarChar(50)
 
+  // Language (EN, JP, etc.)
+  language           String?   @default("EN") @db.VarChar(10)
+
   // OPTCG API prices (TCGplayer source)
   optcgTcgplayerUsd  Decimal?  @map("optcg_tcgplayer_usd") @db.Decimal(10, 2)
   optcgTcgplayerGbp  Decimal?  @map("optcg_tcgplayer_gbp") @db.Decimal(10, 2)
@@ -133,6 +136,7 @@ model CardPriceV2 {
   @@index([tradeinPriceGbp], map: "idx_card_prices_v2_tradein")
   @@index([name], map: "idx_card_prices_v2_name")
   @@index([shopifyProductId], map: "idx_card_prices_v2_shopify")
+  @@index([language], map: "idx_card_prices_v2_language")
   @@map("card_prices_v2")
 }
 

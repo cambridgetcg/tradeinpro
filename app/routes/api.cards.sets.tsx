@@ -12,6 +12,7 @@ import {
   validateAppProxy,
   jsonResponse,
   errorResponse,
+  sanitizeString,
 } from "../lib/app-proxy.server";
 
 // Set display names mapping
@@ -66,12 +67,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return errorResponse(401, "unauthorized", "Invalid request signature");
   }
 
+  const url = new URL(request.url);
+  const game = sanitizeString(url.searchParams.get("game") || "onepiece", 50);
+
   try {
     // Get unique sets with card counts
     const setsData = await prisma.cardPriceV2.groupBy({
       by: ["setCode"],
       where: {
-        game: "onepiece",
+        game,
         tradeinPriceGbp: { not: null },
         setCode: { not: null },
       },

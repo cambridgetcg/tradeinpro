@@ -74,6 +74,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Extract query parameters
   const query = sanitizeString(url.searchParams.get("q") || "", MAX_QUERY_LENGTH);
+  const game = sanitizeString(url.searchParams.get("game") || "onepiece", 50);
+  const language = sanitizeString(url.searchParams.get("language") || "", 10) || undefined;
   const setCode = sanitizeString(url.searchParams.get("set") || "", 20) || undefined;
   const releaseSet = sanitizeString(url.searchParams.get("release") || "", 20) || undefined;
   const page = Math.max(1, parsePositiveInt(url.searchParams.get("page"), 1));
@@ -91,9 +93,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Build where clause dynamically
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const baseWhere: Record<string, any> = {
-      game: "onepiece",
+      game,
       tradeinPriceGbp: { not: null },
     };
+
+    // Add language filter
+    if (language) {
+      baseWhere.language = language.toUpperCase();
+    }
 
     // Add search filter
     if (query && query.length >= MIN_QUERY_LENGTH) {
@@ -164,13 +171,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // Get unique sets for filter dropdown
       prisma.cardPriceV2.groupBy({
         by: ["setCode"],
-        where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+        where: { game, tradeinPriceGbp: { not: null } },
         orderBy: { setCode: "asc" },
       }),
       // Get unique releases for filter dropdown
       prisma.cardPriceV2.groupBy({
         by: ["releaseSet"],
-        where: { game: "onepiece", tradeinPriceGbp: { not: null } },
+        where: { game, tradeinPriceGbp: { not: null } },
         orderBy: { releaseSet: "asc" },
       }),
     ]);

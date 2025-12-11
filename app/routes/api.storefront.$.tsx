@@ -28,6 +28,8 @@ import { loader as trackLoader } from "./api.track";
 import { loader as cardsSearchLoader } from "./api.cards.search";
 import { loader as cardsBrowseLoader } from "./api.cards.browse";
 import { loader as cardsSetsLoader } from "./api.cards.sets";
+import { loader as cardsGamesLoader } from "./api.cards.games";
+import { loader as cardsLanguagesLoader } from "./api.cards.languages";
 import { loader as submissionsLoader, action as submissionsAction } from "./api.submissions";
 import { loader as packingSlipLoader } from "./api.packing-slip.$number";
 import { loader as shippingInstructionsLoader } from "./api.shipping-instructions.$number";
@@ -78,6 +80,18 @@ function matchRoute(
   // GET /cards/sets
   if (segments[0] === "cards" && segments[1] === "sets" && method === "GET") {
     return { handler: cardsSetsLoader };
+  }
+
+  // Card games
+  // GET /cards/games
+  if (segments[0] === "cards" && segments[1] === "games" && method === "GET") {
+    return { handler: cardsGamesLoader };
+  }
+
+  // Card languages
+  // GET /cards/languages
+  if (segments[0] === "cards" && segments[1] === "languages" && method === "GET") {
+    return { handler: cardsLanguagesLoader };
   }
 
   // Submissions list/create
