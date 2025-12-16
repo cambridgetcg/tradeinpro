@@ -130,6 +130,11 @@
       // Customer email
       customerEmail: form.querySelector("[data-customer-email]"),
       emailError: form.querySelector("[data-email-error]"),
+      // Contact preferences (both required)
+      customerPhone: form.querySelector("[data-customer-phone]"),
+      phoneError: form.querySelector("[data-phone-error]"),
+      contactChannel: form.querySelector("[data-contact-channel]"),
+      contactChannelError: form.querySelector("[data-contact-channel-error]"),
     };
 
     return elements;
@@ -888,6 +893,12 @@
       }
     }
 
+    // Validate contact preferences (phone and contact channel are required)
+    const contactValidation = validateContactPreferences();
+    if (!contactValidation.valid) {
+      return; // Validation function handles showing errors
+    }
+
     state.isSubmitting = true;
 
     // Show loading
@@ -917,6 +928,10 @@
       submissionData.bankSortCode = elements.bankSortCode?.value.trim();
       submissionData.bankAccountNumber = elements.bankAccountNumber?.value.trim();
     }
+
+    // Include contact preferences (required)
+    submissionData.phone = elements.customerPhone?.value.trim();
+    submissionData.contactChannel = elements.contactChannel?.value;
 
     // Include shipping address if provided (for free prepaid label)
     if (qualifiesForFreeShipping && elements.shippingName?.value.trim()) {
@@ -1033,6 +1048,12 @@
     if (elements.bankAccountName) elements.bankAccountName.value = "";
     if (elements.bankSortCode) elements.bankSortCode.value = "";
     if (elements.bankAccountNumber) elements.bankAccountNumber.value = "";
+
+    // Reset contact preferences
+    if (elements.customerPhone) elements.customerPhone.value = "";
+    if (elements.phoneError) elements.phoneError.hidden = true;
+    if (elements.contactChannel) elements.contactChannel.value = "";
+    if (elements.contactChannelError) elements.contactChannelError.hidden = true;
 
     updateCart();
     showFormSection("form");
@@ -1177,6 +1198,52 @@
     }
 
     return { valid: true, errors: [] };
+  }
+
+  // ============================================================================
+  // Contact Preferences Handling
+  // ============================================================================
+
+  /**
+   * Validate phone number and contact channel (both required)
+   * Returns { valid: boolean }
+   */
+  function validateContactPreferences() {
+    let isValid = true;
+
+    // Validate phone (required)
+    const phone = elements.customerPhone?.value.trim();
+    if (!phone) {
+      if (elements.phoneError) {
+        elements.phoneError.hidden = false;
+      }
+      elements.customerPhone?.focus();
+      showError("Please enter your phone number");
+      isValid = false;
+    } else {
+      if (elements.phoneError) {
+        elements.phoneError.hidden = true;
+      }
+    }
+
+    // Validate contact channel (required)
+    const contactChannel = elements.contactChannel?.value;
+    if (!contactChannel) {
+      if (elements.contactChannelError) {
+        elements.contactChannelError.hidden = false;
+      }
+      if (isValid) {
+        elements.contactChannel?.focus();
+        showError("Please select a contact method");
+      }
+      isValid = false;
+    } else {
+      if (elements.contactChannelError) {
+        elements.contactChannelError.hidden = true;
+      }
+    }
+
+    return { valid: isValid };
   }
 
   // ============================================================================

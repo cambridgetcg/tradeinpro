@@ -895,6 +895,37 @@
   color: var(--ti-text-muted);
 }
 
+.admin-customer__contact {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.admin-customer__label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.admin-customer__contact-info {
+  font-size: 14px;
+  color: var(--ti-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-customer__channel {
+  padding: 0.125rem 0.5rem;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 /* Shipping Card */
 .admin-shipping__form {
   display: flex;

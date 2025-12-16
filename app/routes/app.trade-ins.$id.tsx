@@ -19,6 +19,8 @@ import {
   type ConditionType,
   PayoutTypeLabels,
   type PayoutTypeValue,
+  ContactChannelLabels,
+  type ContactChannelType,
   formatPrice,
   isConditionWorse,
 } from "../lib/constants";
@@ -824,6 +826,20 @@ export default function TradeInDetail() {
               {submission.customer.phone && (
                 <div className="admin-customer__phone">
                   {submission.customer.phone}
+                </div>
+              )}
+              {/* Contact preferences for this submission */}
+              {submission.phone && (
+                <div className="admin-customer__contact">
+                  <span className="admin-customer__label">Contact for this submission:</span>
+                  <div className="admin-customer__contact-info">
+                    {submission.phone}
+                    {submission.contactChannel && (
+                      <span className="admin-customer__channel">
+                        via {ContactChannelLabels[submission.contactChannel as ContactChannelType] || submission.contactChannel}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

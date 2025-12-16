@@ -178,6 +178,51 @@
       </div>
     {% endif %}
 
+    {% comment %} Contact Preferences (required) {% endcomment %}
+    <div class="trade-in-contact-details" data-contact-details>
+      <h4 class="trade-in-contact-details__title">{{ 'trade_in.contact.title' | t | default: 'Contact Preferences' }}</h4>
+      <p class="trade-in-contact-details__subtitle">{{ 'trade_in.contact.subtitle' | t | default: 'How would you like us to contact you about your submission?' }}</p>
+      <div class="trade-in-form__fields">
+        <div class="trade-in-form__field">
+          <label for="customer-phone" class="trade-in-form__label">
+            {{ 'trade_in.contact.phone' | t | default: 'Phone Number' }} <span class="required">*</span>
+          </label>
+          <input
+            type="tel"
+            id="customer-phone"
+            name="phone"
+            class="trade-in-form__input"
+            placeholder="+44 7123 456789"
+            required
+            data-customer-phone
+          >
+          <span class="trade-in-form__error" data-phone-error hidden>
+            {{ 'trade_in.contact.phone_required' | t | default: 'Please enter your phone number' }}
+          </span>
+        </div>
+        <div class="trade-in-form__field">
+          <label for="contact-channel" class="trade-in-form__label">
+            {{ 'trade_in.contact.channel' | t | default: 'Contact via' }} <span class="required">*</span>
+          </label>
+          <select
+            id="contact-channel"
+            name="contactChannel"
+            class="trade-in-form__input trade-in-form__select"
+            required
+            data-contact-channel
+          >
+            <option value="">Select...</option>
+            <option value="WHATSAPP">WhatsApp</option>
+            <option value="TELEGRAM">Telegram</option>
+            <option value="SIGNAL">Signal</option>
+          </select>
+          <span class="trade-in-form__error" data-contact-channel-error hidden>
+            {{ 'trade_in.contact.channel_required' | t | default: 'Please select a contact method' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
     {% comment %} Bank Details (always visible, required for bank transfer) {% endcomment %}
     <div class="trade-in-bank-details" data-bank-details>
       <h4 class="trade-in-bank-details__title">{{ 'trade_in.bank.title' | t | default: 'Bank Details' }}</h4>

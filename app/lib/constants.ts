@@ -134,6 +134,24 @@ export const PayoutTypeLabels: Record<PayoutTypeValue, string> = {
 };
 
 // ============================================================================
+// CONTACT CHANNELS
+// ============================================================================
+
+export const ContactChannel = {
+  WHATSAPP: "WHATSAPP",
+  TELEGRAM: "TELEGRAM",
+  SIGNAL: "SIGNAL",
+} as const;
+
+export type ContactChannelType = (typeof ContactChannel)[keyof typeof ContactChannel];
+
+export const ContactChannelLabels: Record<ContactChannelType, string> = {
+  [ContactChannel.WHATSAPP]: "WhatsApp",
+  [ContactChannel.TELEGRAM]: "Telegram",
+  [ContactChannel.SIGNAL]: "Signal",
+};
+
+// ============================================================================
 // PAYOUT STATUS
 // ============================================================================
 

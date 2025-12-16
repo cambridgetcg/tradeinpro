@@ -644,6 +644,44 @@
 }
 
 /* ============================================================================
+   Contact Details Section
+   ============================================================================ */
+
+.trade-in-contact-details {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: var(--ti-bg-muted);
+  border: 1px solid var(--ti-border);
+  border-radius: var(--ti-radius);
+}
+
+.trade-in-contact-details__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: var(--ti-text);
+}
+
+.trade-in-contact-details__subtitle {
+  font-size: 0.875rem;
+  color: var(--ti-text-muted);
+  margin: 0 0 1rem;
+}
+
+.trade-in-contact-details .trade-in-form__fields {
+  margin-bottom: 0;
+}
+
+.trade-in-form__select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1.25rem;
+  padding-right: 2.5rem;
+}
+
+/* ============================================================================
    Bank Details Section
    ============================================================================ */
 

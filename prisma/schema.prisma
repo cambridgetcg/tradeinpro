@@ -165,6 +165,47 @@ model InventoryAltArt {
   @@map("inventory_alt_art")
 }
 
+// Japanese card price source (imported from CSV/Excel)
+// Used to store Japanese card prices before syncing to CardPriceV2
+model JapanesePriceSource {
+  id                 String    @id @default(cuid())
+
+  // Card identification (matches Shopify SKU format)
+  sku                String    @unique @db.VarChar(100)  // e.g., "OP01-003-P"
+
+  // Card metadata (from CSV)
+  name               String    @db.VarChar(500)
+  setCode            String?   @map("set_code") @db.VarChar(20)
+  cardNumber         String?   @map("card_number") @db.VarChar(20)
+  variantType        String?   @map("variant_type") @db.VarChar(50)
+  rarity             String?   @db.VarChar(50)
+
+  // Pricing (from CSV)
+  priceJpy           Int?      @map("price_jpy")           // Original JPY price
+  priceGbp           Int?      @map("price_gbp")           // Converted/provided GBP (pence)
+  tradeinPriceGbp    Int?      @map("tradein_price_gbp")   // Trade-in price (pence)
+
+  // Exchange rate used
+  jpyToGbpRate       Decimal?  @map("jpy_to_gbp_rate") @db.Decimal(10, 6)
+
+  // Source tracking
+  source             String    @default("csv_import") @db.VarChar(50)
+  sourceRowId        String?   @map("source_row_id") @db.VarChar(100)
+
+  // Sync status
+  syncedToCardPrice  Boolean   @default(false) @map("synced_to_card_price")
+  cardPriceV2Id      String?   @map("card_price_v2_id") @db.VarChar(100)
+
+  // Timestamps
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([setCode], map: "idx_jp_price_set_code")
+  @@index([syncedToCardPrice], map: "idx_jp_price_synced")
+  @@index([name], map: "idx_jp_price_name")
+  @@map("japanese_price_source")
+}
+
 // ============================================================================
 // TRADE-IN SYSTEM MODELS
 // ============================================================================
@@ -258,6 +299,10 @@ model TradeInSubmission {
   bankAccountName   String?  // Name on the account
   bankSortCode      String?  // UK sort code (XX-XX-XX)
   bankAccountNumber String?  // UK account number (8 digits)
+
+  // Customer contact preferences
+  phone            String?  // Customer phone number for this submission
+  contactChannel   String?  // WHATSAPP, TELEGRAM, SIGNAL
 
   // Totals (in cents)
   quotedTotal      Int      @default(0)

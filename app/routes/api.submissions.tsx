@@ -122,6 +122,9 @@ export async function action({ request }: ActionFunctionArgs) {
         bankAccountName: body.bankAccountName ? sanitizeString(body.bankAccountName, 100) : undefined,
         bankSortCode: body.bankSortCode ? body.bankSortCode.replace(/[-\s]/g, "") : undefined,
         bankAccountNumber: body.bankAccountNumber ? body.bankAccountNumber.replace(/\s/g, "") : undefined,
+        // Contact preferences
+        phone: body.phone ? sanitizeString(body.phone, 30) : undefined,
+        contactChannel: body.contactChannel || undefined,
       },
       context.shop // Pass shop for settings lookup
     );
@@ -182,10 +185,14 @@ interface CreateSubmissionRequest {
   bankAccountName?: string;
   bankSortCode?: string;
   bankAccountNumber?: string;
+  // Contact preferences
+  phone?: string;
+  contactChannel?: string;
 }
 
 const VALID_PAYOUT_TYPES = ["STORE_CREDIT", "BANK", "PAYPAL"];
 const VALID_CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
+const VALID_CONTACT_CHANNELS = ["WHATSAPP", "TELEGRAM", "SIGNAL"];
 const MAX_ITEMS = 100;
 const MAX_QUANTITY_PER_ITEM = 99;
 
@@ -226,6 +233,16 @@ function validateCreateSubmissionRequest(body: any): { valid: boolean; errors: s
       if (!/^\d{8}$/.test(accountNumberClean)) {
         errors.push("Account number must be 8 digits");
       }
+    }
+  }
+
+  // Phone validation (required)
+  if (!body.phone || typeof body.phone !== "string" || !body.phone.trim()) {
+    errors.push("Phone number is required");
+  } else {
+    // Contact channel validation (required when phone is provided)
+    if (!body.contactChannel || !VALID_CONTACT_CHANNELS.includes(body.contactChannel)) {
+      errors.push(`Contact channel is required. Must be one of: ${VALID_CONTACT_CHANNELS.join(", ")}`);
     }
   }
 

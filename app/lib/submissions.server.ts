@@ -33,6 +33,9 @@ export interface CreateSubmissionInput {
   bankAccountName?: string;
   bankSortCode?: string;
   bankAccountNumber?: string;
+  // Contact preferences
+  phone?: string;
+  contactChannel?: string;
 }
 
 export interface SubmissionValidation {
@@ -631,6 +634,9 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
         bankSortCode: input.bankSortCode,
         bankAccountNumber: input.bankAccountNumber,
       }),
+      // Contact preferences
+      phone: input.phone || null,
+      contactChannel: input.contactChannel || null,
       items: {
         create: validatedItems
           .filter(vi => vi.isValid)
