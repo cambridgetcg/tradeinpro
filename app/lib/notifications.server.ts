@@ -54,7 +54,8 @@ const MERCHANT_EMAIL = process.env.MERCHANT_EMAIL || "trade-ins@cardforum.co.uk"
 const FROM_EMAIL = process.env.FROM_EMAIL || "trade-in@cardforum.co.uk";
 
 function buildTrackingUrl(submissionNumber: string): string {
-  return `${SHOP_URL}/apps/trade-in/track?number=${submissionNumber}`;
+  // Use the theme page, not the API endpoint (which returns JSON)
+  return `${SHOP_URL}/pages/trade-in-track?number=${submissionNumber}`;
 }
 
 function buildAccountUrl(): string {
