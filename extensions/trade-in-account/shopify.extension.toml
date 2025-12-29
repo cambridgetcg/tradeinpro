@@ -1,0 +1,31 @@
+api_version = "2025-07"
+
+[[extensions]]
+name = "Trade-In History"
+handle = "trade-in-page"
+uid = "17672b54-a802-d937-0238-df4d6f9c986fec54fcfd"
+type = "ui_extension"
+
+  [[extensions.targeting]]
+  target = "customer-account.page.render"
+  module = "./src/TradeInPage.tsx"
+
+[[extensions]]
+name = "Trade-In Stats"
+handle = "trade-in-profile"
+uid = "3658be92-8c0c-5d64-69f5-4601beecc4b68587cf63"
+type = "ui_extension"
+
+  [[extensions.targeting]]
+  target = "customer-account.profile.block.render"
+  module = "./src/ProfileWidget.tsx"
+
+[[extensions]]
+name = "Trade-In CTA"
+handle = "trade-in-footer"
+uid = "9724a439-c572-8700-c541-107017361c1eb939cc73"
+type = "ui_extension"
+
+  [[extensions.targeting]]
+  target = "customer-account.footer.render-after"
+  module = "./src/FooterCTA.tsx"

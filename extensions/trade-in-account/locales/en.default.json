@@ -1,0 +1,54 @@
+{
+  "trade_in_page": {
+    "title": "My Trade-Ins",
+    "start_new": "Start New Trade-In",
+    "loading": "Loading submissions...",
+    "error": "Failed to load submissions",
+    "load_more": "Load More"
+  },
+  "stats": {
+    "total": "Total",
+    "active": "Active",
+    "completed": "Completed",
+    "earned": "Earned"
+  },
+  "filters": {
+    "all": "All",
+    "active": "Active",
+    "completed": "Completed",
+    "needs_action": "Needs Action"
+  },
+  "submission": {
+    "cards": "cards",
+    "card": "card",
+    "grading_complete": "Grading complete - please review",
+    "accept": "Accept Offer",
+    "reject": "Request Return",
+    "download_packing_slip": "Download Packing Slip",
+    "shipping_instructions": "Shipping Instructions"
+  },
+  "empty": {
+    "all_title": "No trade-ins yet",
+    "all_description": "Start your first trade-in to see it here.",
+    "active_title": "No active trade-ins",
+    "active_description": "All your trade-ins have been processed.",
+    "completed_title": "No completed trade-ins",
+    "completed_description": "Completed trade-ins will appear here.",
+    "needs_action_title": "Nothing needs your attention",
+    "needs_action_description": "You're all caught up!"
+  },
+  "profile_widget": {
+    "title": "Trade-In Activity",
+    "no_trade_ins": "No trade-ins yet",
+    "start_first": "Start your first trade-in",
+    "trade_ins": "Trade-ins",
+    "in_progress": "In Progress",
+    "earned": "Earned",
+    "view_all": "View All Trade-Ins"
+  },
+  "footer_cta": {
+    "title": "Have trading cards to sell?",
+    "description": "Get up to 70% of market value + 10% bonus with store credit",
+    "button": "Start Trade-In"
+  }
+}

@@ -34,6 +34,10 @@ import { loader as submissionsLoader, action as submissionsAction } from "./api.
 import { loader as packingSlipLoader } from "./api.packing-slip.$number";
 import { loader as shippingInstructionsLoader } from "./api.shipping-instructions.$number";
 import { loader as settingsPublicLoader } from "./api.settings.public";
+// Customer Account Extension endpoints (my-submissions)
+import { loader as mySubmissionsLoader } from "./api.my-submissions";
+import { loader as mySubmissionDetailLoader } from "./api.my-submissions.$number";
+import { action as mySubmissionActionHandler } from "./api.my-submissions.$number.action";
 
 // ============================================================================
 // Route Matching
@@ -119,6 +123,34 @@ function matchRoute(
   if (segments[0] === "shipping-instructions" && segments[1] && method === "GET") {
     return {
       handler: shippingInstructionsLoader,
+      params: { number: segments[1] },
+    };
+  }
+
+  // ============================================================================
+  // Customer Account Extension Routes (my-submissions)
+  // ============================================================================
+
+  // My submissions list (logged-in customer)
+  // GET /my-submissions
+  if (segments[0] === "my-submissions" && segments.length === 1 && method === "GET") {
+    return { handler: mySubmissionsLoader };
+  }
+
+  // My submission detail
+  // GET /my-submissions/:number
+  if (segments[0] === "my-submissions" && segments.length === 2 && segments[1] !== "action" && method === "GET") {
+    return {
+      handler: mySubmissionDetailLoader,
+      params: { number: segments[1] },
+    };
+  }
+
+  // My submission action (accept/reject/cancel)
+  // POST /my-submissions/:number/action
+  if (segments[0] === "my-submissions" && segments.length === 3 && segments[2] === "action" && method === "POST") {
+    return {
+      handler: mySubmissionActionHandler,
       params: { number: segments[1] },
     };
   }
