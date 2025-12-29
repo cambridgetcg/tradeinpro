@@ -8,6 +8,12 @@
       "includeFiles": "build/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/jp-price-sync",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/build/client/(.*)", "destination": "/build/client/$1" },
     { "source": "/(.*)", "destination": "/api/index.js" }

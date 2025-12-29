@@ -169,6 +169,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const {
     sendSubmissionReceivedNotification,
     sendGradingCompleteNotification,
+    sendReturnRequestedNotification,
   } = await import("../lib/notifications.server");
   type SubmissionContext = Parameters<typeof attemptTransition>[0];
 
@@ -265,6 +266,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
             await sendSubmissionReceivedNotification(updatedSubmission);
           } else if (newStatus === SubmissionStatus.PENDING_APPROVAL) {
             await sendGradingCompleteNotification(updatedSubmission);
+          } else if (newStatus === SubmissionStatus.RETURNED) {
+            await sendReturnRequestedNotification(
+              updatedSubmission,
+              "Your trade-in has been marked for return. Your cards will be shipped back to you."
+            );
           }
           // Note: APPROVED notification is sent via payout processing
           // Note: SUBMITTED notification is sent when customer submits from storefront

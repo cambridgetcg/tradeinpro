@@ -49,6 +49,8 @@ import {
   PayoutTypeLabels,
   type PayoutStatusType,
 } from "../lib/constants";
+import prisma from "../db.server";
+import { sendPayoutIssuedNotification } from "../lib/notifications.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -94,6 +96,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { success: false, error: result.error };
     }
 
+    // Send payout notification email
+    try {
+      const payout = await prisma.payout.findUnique({
+        where: { id: payoutId },
+        include: {
+          submission: {
+            include: {
+              customer: true,
+              items: true,
+            },
+          },
+        },
+      });
+
+      if (payout?.submission) {
+        await sendPayoutIssuedNotification(payout.submission, {
+          totalAmount: payout.totalAmount,
+          giftCardCode: result.giftCard?.code,
+        });
+      }
+    } catch (emailError) {
+      console.error("Failed to send payout notification:", emailError);
+      // Don't fail the action if email fails
+    }
+
     return {
       success: true,
       message: `Gift card issued: ${result.giftCard?.code}`,
@@ -125,6 +152,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!result.success) {
       return { success: false, error: result.error };
+    }
+
+    // Send payout notification email for bank transfer
+    try {
+      const payout = await prisma.payout.findUnique({
+        where: { id: payoutId },
+        include: {
+          submission: {
+            include: {
+              customer: true,
+              items: true,
+            },
+          },
+        },
+      });
+
+      if (payout?.submission) {
+        await sendPayoutIssuedNotification(payout.submission, {
+          totalAmount: payout.totalAmount,
+          bankReference: payout.bankReference || undefined,
+        });
+      }
+    } catch (emailError) {
+      console.error("Failed to send payout notification:", emailError);
+      // Don't fail the action if email fails
     }
 
     return { success: true, message: "Payout completed" };
