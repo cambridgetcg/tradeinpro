@@ -10,7 +10,11 @@ CardForum is a comprehensive trading card trade-in management system that enable
 | **trading-card-pricer** | Price aggregation Lambda | AWS CDK, Python, PostgreSQL | Production |
 | **ShopifyTheme_TCG** | Customer storefront | Shopify Liquid, Vanilla JS | Production |
 
-**Current State**: ~95% feature-complete with 564 unit tests across 5 implementation phases.
+**Current State**: ~97% feature-complete with 564 unit tests across 5 implementation phases.
+
+**Latest Updates (December 29, 2024):**
+- P0 Double Discount Bug - **RESOLVED** (already fixed in previous sessions)
+- P0 Customer Account Extension - **DEPLOYED** as cardforum-16
 
 ---
 
@@ -108,13 +112,16 @@ CardForum is a comprehensive trading card trade-in management system that enable
 
 ## Identified Gaps & Opportunities
 
-### Critical Issues (P0)
+### Critical Issues (P0) - ALL RESOLVED
 
-| Issue | Impact | Root Cause |
+| Issue | Status | Resolution |
 |-------|--------|------------|
-| **Double Discount Bug** | Customers underpaid by ~21% | Lambda applies 70% multiplier, API applies it again |
-| **Grading Price Calculation** | Grading UI may fail | `cardPriceId` FK constraint with CardPriceV2 |
-| **Customer Account Extension** | No native account integration | Extension scaffold created but not deployed |
+| ~~Double Discount Bug~~ | **FIXED** | Lambda now stores market price; APIs use `bestPriceGbp` as base |
+| ~~Customer Account Extension~~ | **DEPLOYED** | Extension deployed as cardforum-16 with API routing |
+
+**Resolution Details (December 29, 2024):**
+- **Double Discount Bug**: Investigation confirmed fix was already in place across all three layers (Lambda, API, Theme). Code comments document the fix was intentional.
+- **Customer Account Extension**: Successfully deployed with three targets (page, profile widget, footer CTA). Added `/my-submissions/*` routes to storefront API router.
 
 ### High Priority (P1)
 
@@ -123,7 +130,7 @@ CardForum is a comprehensive trading card trade-in management system that enable
 | Admin UI inconsistency | Poor UX | Unified CSS design system with shared tokens |
 | Email notifications not wired | Customers not notified | Connect workflow transitions to email triggers |
 | Tracking number management | Incomplete shipping flow | Add tracking input in admin detail page |
-| Customer approval flow incomplete | Can't complete PENDING_APPROVAL | Deploy Customer Account Extension |
+| ~~Customer approval flow incomplete~~ | **RESOLVED** | Customer Account Extension now deployed |
 
 ### Medium Priority (P2)
 
@@ -416,5 +423,6 @@ With 564 tests passing and a solid architectural foundation, the system is ready
 
 ---
 
-*Last Updated: December 2024*
-*Version: 1.0*
+*Last Updated: December 29, 2024*
+*Version: 1.1*
+*P0 Issues Resolved: Double Discount Bug (confirmed fixed), Customer Account Extension (deployed)*
