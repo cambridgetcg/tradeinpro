@@ -403,6 +403,58 @@ CardForum Team
 }
 
 /**
+ * Grading Accepted - Sent when customer accepts the grading offer
+ */
+export function buildGradingAcceptedEmail(ctx: SubmissionEmailContext): EmailContent {
+  const trackingUrl = buildTrackingUrl(ctx.submissionNumber);
+  const payoutLabel = ctx.payoutType === "STORE_CREDIT" ? "Store Credit (+10% bonus)" : "Bank Transfer";
+
+  return {
+    to: ctx.customerEmail,
+    subject: `Trade-In ${ctx.submissionNumber} Accepted - Payment Processing`,
+    text: `
+Hi ${ctx.customerName},
+
+Thank you for accepting the grading offer for submission ${ctx.submissionNumber}!
+
+We're now processing your payment:
+- Final Total: ${formatPrice(ctx.finalTotal ?? ctx.quotedTotal)}
+- Payout Method: ${payoutLabel}
+
+${ctx.payoutType === "STORE_CREDIT"
+  ? "Your gift card will be emailed to you shortly."
+  : "Your bank transfer will be processed within 2-3 business days."}
+
+You can track the status of your submission here: ${trackingUrl}
+
+Thank you for trading with us!
+
+CardForum Team
+    `.trim(),
+    html: buildEmailHtml({
+      title: "Payment Processing",
+      greeting: `Hi ${ctx.customerName},`,
+      body: `
+        <p>Thank you for accepting the grading offer for submission <strong>${ctx.submissionNumber}</strong>!</p>
+
+        <div style="background: #e8f5e9; border: 1px solid #4caf50; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0 0 10px 0;"><strong>We're now processing your payment:</strong></p>
+          <p style="margin: 5px 0;"><strong>Final Total:</strong> ${formatPrice(ctx.finalTotal ?? ctx.quotedTotal)}</p>
+          <p style="margin: 5px 0;"><strong>Payout Method:</strong> ${payoutLabel}</p>
+        </div>
+
+        ${ctx.payoutType === "STORE_CREDIT"
+          ? "<p>Your gift card will be emailed to you shortly once processed.</p>"
+          : "<p>Your bank transfer will be processed within <strong>2-3 business days</strong>.</p>"}
+
+        <p>Thank you for trading with us!</p>
+      `,
+      cta: { text: "View Submission", url: trackingUrl },
+    }),
+  };
+}
+
+/**
  * Merchant notification - New submission
  */
 export function buildMerchantNewSubmissionEmail(ctx: SubmissionEmailContext): EmailContent {
@@ -697,6 +749,17 @@ export async function sendReturnRequestedNotification(
 ): Promise<void> {
   const ctx = await buildSubmissionContext(submission);
   const email = buildReturnRequestedEmail(ctx, reason);
+  await sendEmail(email);
+}
+
+/**
+ * Send grading accepted notification (customer accepted the offer)
+ */
+export async function sendGradingAcceptedNotification(
+  submission: any
+): Promise<void> {
+  const ctx = await buildSubmissionContext(submission);
+  const email = buildGradingAcceptedEmail(ctx);
   await sendEmail(email);
 }
 

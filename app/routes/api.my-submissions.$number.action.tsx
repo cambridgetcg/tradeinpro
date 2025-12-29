@@ -120,7 +120,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // Handle each action type
     switch (actionType) {
       case "accept":
-        return handleAccept(submission);
+        return handleAccept(submission, context.shop);
 
       case "reject":
         return handleReject(submission, reason);
@@ -145,7 +145,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 // ============================================================================
 
 async function handleAccept(
-  submission: { id: string; submissionNumber: string; status: string }
+  submission: { id: string; submissionNumber: string; status: string },
+  shop: string
 ): Promise<Response> {
   // Validate status
   if (submission.status !== SubmissionStatus.PENDING_APPROVAL) {
@@ -175,7 +176,39 @@ async function handleAccept(
     },
   });
 
-  // TODO: Trigger payout creation and email notification
+  // Create payout record for processing
+  try {
+    const { createPayout } = await import("../lib/payouts.server");
+    const payoutResult = await createPayout(shop, submission.id);
+
+    if (!payoutResult.success) {
+      console.error("[handleAccept] Failed to create payout:", payoutResult.error);
+      // Don't fail the accept - payout can be created manually
+      // But log it for visibility
+    } else {
+      console.log("[handleAccept] Payout created successfully for submission:", submission.submissionNumber);
+    }
+  } catch (payoutError) {
+    console.error("[handleAccept] Error creating payout:", payoutError);
+    // Don't fail the accept - payout can be created manually
+  }
+
+  // Send confirmation email to customer
+  try {
+    const fullSubmission = await prisma.tradeInSubmission.findUnique({
+      where: { id: submission.id },
+      include: { customer: true, items: true },
+    });
+
+    if (fullSubmission) {
+      const { sendGradingAcceptedNotification } = await import("../lib/notifications.server");
+      await sendGradingAcceptedNotification(fullSubmission);
+      console.log("[handleAccept] Acceptance notification sent for:", submission.submissionNumber);
+    }
+  } catch (emailError) {
+    console.error("[handleAccept] Failed to send acceptance notification:", emailError);
+    // Don't fail the accept if email fails
+  }
 
   const response: ActionResponse = {
     success: true,
@@ -211,19 +244,39 @@ async function handleReject(
     },
   });
 
+  const sanitizedReason = reason ? sanitizeString(reason, 500) : undefined;
+
   // Add note
   await prisma.submissionNote.create({
     data: {
       submissionId: submission.id,
       authorType: "CUSTOMER",
-      message: reason
-        ? `Customer rejected the offer and requested return. Reason: ${sanitizeString(reason, 500)}`
+      message: sanitizedReason
+        ? `Customer rejected the offer and requested return. Reason: ${sanitizedReason}`
         : "Customer rejected the offer and requested return",
       isInternal: false,
     },
   });
 
-  // TODO: Trigger return process and email notification
+  // Send return confirmation email to customer
+  try {
+    const fullSubmission = await prisma.tradeInSubmission.findUnique({
+      where: { id: submission.id },
+      include: { customer: true, items: true },
+    });
+
+    if (fullSubmission) {
+      const { sendReturnRequestedNotification } = await import("../lib/notifications.server");
+      await sendReturnRequestedNotification(
+        fullSubmission,
+        sanitizedReason || "Customer rejected the grading offer and requested cards to be returned."
+      );
+      console.log("[handleReject] Return notification sent for:", submission.submissionNumber);
+    }
+  } catch (emailError) {
+    console.error("[handleReject] Failed to send return notification:", emailError);
+    // Don't fail the reject if email fails
+  }
 
   const response: ActionResponse = {
     success: true,
