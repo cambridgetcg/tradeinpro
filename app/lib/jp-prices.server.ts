@@ -409,7 +409,19 @@ export async function syncJapanesePricesToCards(
         // Check if card exists
         const existing = await prisma.cardPriceV2.findUnique({
           where: { cardId },
+          select: { imageUrl: true },
         });
+
+        // Determine image URL:
+        // - Preserve existing full URL if present (handles SP cards correctly)
+        // - Otherwise construct from setCode/cardNumber (works for regular cards)
+        const existingImageUrl = existing?.imageUrl;
+        const existingHasFullUrl = existingImageUrl?.startsWith("https://") ?? false;
+        const newImageUrl = existingHasFullUrl
+          ? existingImageUrl // Preserve existing full URL
+          : jpPrice.setCode && jpPrice.cardNumber
+            ? getJpCardImageUrl(jpPrice.setCode, jpPrice.cardNumber)
+            : null;
 
         const cardData = {
           name: jpPrice.name,
@@ -423,6 +435,7 @@ export async function syncJapanesePricesToCards(
           bestPriceGbp: jpPrice.priceGbp / 100, // Convert pence to pounds for Decimal
           tradeinPriceGbp: tradeinPriceGbp / 100, // Convert pence to pounds for Decimal
           lastUpdated: new Date(),
+          imageUrl: newImageUrl,
         };
 
         if (existing) {
@@ -718,8 +731,8 @@ export async function downloadPriceFeedFromS3(): Promise<{
     // Get JPY price from latest date column
     const jpyPrice = latestDateCol ? Number(row[latestDateCol]) : undefined;
 
-    // Get GBP selling price if available
-    const gbpPrice = row["selling_price"] ? Number(row["selling_price"]) : undefined;
+    // Get GBP base cost (cost price, not selling price) for trade-in calculations
+    const gbpPrice = row["base_cost"] ? Number(row["base_cost"]) : undefined;
 
     if (!jpyPrice && !gbpPrice) continue;
 
