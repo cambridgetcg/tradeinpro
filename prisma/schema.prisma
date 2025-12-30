@@ -481,3 +481,14 @@ model TradeInSettings {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
+
+// Excluded cards from trade-in system
+// Cards in this list will be skipped during price sync
+model ExcludedTradeInCard {
+  sku         String   @id                    // SKU to exclude (e.g., "OP-OP11-SP-OP05-119-JP")
+  reason      String?                         // Optional reason for exclusion
+  excludedAt  DateTime @default(now()) @map("excluded_at")
+  excludedBy  String?  @map("excluded_by")    // Who excluded it (admin email/name)
+
+  @@map("excluded_trade_in_cards")
+}

@@ -57,6 +57,83 @@ export interface JpPriceStats {
   lastUpdated: Date | null;
 }
 
+export interface ExcludedCard {
+  sku: string;
+  reason: string | null;
+  excludedAt: Date;
+  excludedBy: string | null;
+}
+
+// ============================================================================
+// EXCLUSION LIST MANAGEMENT
+// ============================================================================
+
+/**
+ * Get all excluded SKUs as a Set for fast lookup
+ */
+export async function getExcludedSkus(): Promise<Set<string>> {
+  const excluded = await prisma.excludedTradeInCard.findMany({
+    select: { sku: true },
+  });
+  return new Set(excluded.map((e) => e.sku));
+}
+
+/**
+ * Get all excluded cards with details
+ */
+export async function getExcludedCards(): Promise<ExcludedCard[]> {
+  return prisma.excludedTradeInCard.findMany({
+    orderBy: { excludedAt: "desc" },
+  });
+}
+
+/**
+ * Add a card to the exclusion list
+ */
+export async function addExclusion(
+  sku: string,
+  reason?: string,
+  excludedBy?: string
+): Promise<ExcludedCard> {
+  // Also remove from CardPriceV2 and JapanesePriceSource if they exist
+  const cardId = `JP-${sku}`.toUpperCase();
+
+  await prisma.$transaction([
+    // Add to exclusion list
+    prisma.excludedTradeInCard.upsert({
+      where: { sku },
+      create: { sku, reason, excludedBy },
+      update: { reason, excludedBy, excludedAt: new Date() },
+    }),
+    // Remove from CardPriceV2 if exists
+    prisma.cardPriceV2.deleteMany({ where: { cardId } }),
+    // Remove from JapanesePriceSource if exists
+    prisma.japanesePriceSource.deleteMany({ where: { sku } }),
+  ]);
+
+  return prisma.excludedTradeInCard.findUniqueOrThrow({ where: { sku } });
+}
+
+/**
+ * Remove a card from the exclusion list (allow it to be imported again)
+ */
+export async function removeExclusion(sku: string): Promise<boolean> {
+  const result = await prisma.excludedTradeInCard.deleteMany({
+    where: { sku },
+  });
+  return result.count > 0;
+}
+
+/**
+ * Check if a SKU is excluded
+ */
+export async function isExcluded(sku: string): Promise<boolean> {
+  const excluded = await prisma.excludedTradeInCard.findUnique({
+    where: { sku },
+  });
+  return excluded !== null;
+}
+
 // ============================================================================
 // CSV PARSING
 // ============================================================================
@@ -257,6 +334,7 @@ export async function jpyToGbpPence(jpyAmount: number): Promise<{ pence: number;
 
 /**
  * Import Japanese price records to JapanesePriceSource table
+ * Skips any SKUs in the exclusion list
  */
 export async function importJapanesePrices(
   records: JpPriceRecord[],
@@ -270,6 +348,10 @@ export async function importJapanesePrices(
     totalProcessed: 0,
   };
 
+  // Load exclusion list once for fast lookup
+  const excludedSkus = await getExcludedSkus();
+  console.log(`Import: ${excludedSkus.size} SKUs in exclusion list`);
+
   const BATCH_SIZE = 50;
   const total = records.length;
   let jpyToGbpRate: number | null = null;
@@ -279,6 +361,12 @@ export async function importJapanesePrices(
 
     for (const record of batch) {
       try {
+        // Skip excluded SKUs
+        if (excludedSkus.has(record.sku)) {
+          result.skipped++;
+          continue;
+        }
+
         // Convert JPY to GBP if needed
         let priceGbpPence: number | null = null;
         let usedJpyRate: number | null = null;
@@ -377,6 +465,10 @@ export async function syncJapanesePricesToCards(
   // Get settings for multipliers
   const settings = await getOrCreateSettings(shop);
 
+  // Load exclusion list once for fast lookup
+  const excludedSkus = await getExcludedSkus();
+  console.log(`Sync: ${excludedSkus.size} SKUs in exclusion list`);
+
   // Get unsynced records (or all records for full sync)
   const jpPrices = await prisma.japanesePriceSource.findMany({
     where: {
@@ -393,6 +485,12 @@ export async function syncJapanesePricesToCards(
 
     for (const jpPrice of batch) {
       try {
+        // Skip excluded SKUs (belt and suspenders with import check)
+        if (excludedSkus.has(jpPrice.sku)) {
+          result.skipped++;
+          continue;
+        }
+
         if (!jpPrice.priceGbp) {
           result.skipped++;
           continue;
