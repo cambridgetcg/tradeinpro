@@ -6,14 +6,16 @@ import {
   Button,
   Text,
   Spinner,
+  Banner,
 } from '@shopify/ui-extensions-react/customer-account';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { StatsBar } from './components/StatsBar';
 import { FilterTabs } from './components/FilterTabs';
 import { SubmissionList } from './components/SubmissionList';
 import { SubmissionDetail } from './components/SubmissionDetail';
 import { EmptyState } from './components/EmptyState';
 import { fetchSubmissions } from './api/client';
+import { useSessionToken } from './hooks/useSessionToken';
 import type { SubmissionSummary, CustomerStats, FilterTab } from './types';
 
 export default reactExtension(
@@ -22,6 +24,9 @@ export default reactExtension(
 );
 
 function TradeInPage() {
+  // Session token with auto-refresh
+  const { token, decoded, loading: tokenLoading, error: tokenError, isPreview, isAuthenticated } = useSessionToken();
+
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [stats, setStats] = useState<CustomerStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +36,15 @@ function TradeInPage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
-  const loadSubmissions = async (filter: FilterTab, pageNum: number) => {
+  // Get shop domain from decoded token
+  const shopDomain = decoded?.shop || '';
+
+  const loadSubmissions = useCallback(async (filter: FilterTab, pageNum: number) => {
+    // Don't load if we don't have a token or shop domain yet
+    if (!token || !shopDomain) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -41,7 +54,7 @@ function TradeInPage() {
         completed: 'completed',
         needs_action: 'PENDING_APPROVAL',
       };
-      const data = await fetchSubmissions({
+      const data = await fetchSubmissions(token, shopDomain, {
         page: pageNum,
         limit: 20,
         status: statusMap[filter],
@@ -51,16 +64,20 @@ function TradeInPage() {
       );
       setStats(data.stats);
       setHasMore(data.pagination.hasMore);
-    } catch {
-      setError('Failed to load submissions');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load submissions';
+      setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, shopDomain, submissions]);
 
+  // Load submissions when token becomes available or filter changes
   useEffect(() => {
-    loadSubmissions(activeFilter, 1);
-  }, [activeFilter]);
+    if (token && shopDomain && !isPreview) {
+      loadSubmissions(activeFilter, 1);
+    }
+  }, [activeFilter, token, shopDomain, isPreview]);
 
   const handleFilterChange = (filter: FilterTab) => {
     setActiveFilter(filter);
@@ -72,11 +89,67 @@ function TradeInPage() {
     loadSubmissions(activeFilter, 1);
   };
 
+  // Preview mode (theme editor) - show friendly message
+  if (isPreview) {
+    return (
+      <Page title="My Trade-Ins">
+        <BlockStack spacing="loose">
+          <Banner status="info">
+            <Text>Log in to view your trade-in submissions.</Text>
+          </Banner>
+          <EmptyState filter="all" />
+        </BlockStack>
+      </Page>
+    );
+  }
+
+  // Token loading state
+  if (tokenLoading) {
+    return (
+      <Page title="My Trade-Ins">
+        <BlockStack inlineAlignment="center" padding="loose">
+          <Spinner />
+          <Text>Authenticating...</Text>
+        </BlockStack>
+      </Page>
+    );
+  }
+
+  // Token error
+  if (tokenError) {
+    return (
+      <Page title="My Trade-Ins">
+        <BlockStack spacing="loose">
+          <Banner status="critical">
+            <Text>Authentication failed. Please refresh the page.</Text>
+          </Banner>
+        </BlockStack>
+      </Page>
+    );
+  }
+
+  // Not authenticated
+  if (!isAuthenticated) {
+    return (
+      <Page title="My Trade-Ins">
+        <BlockStack spacing="loose">
+          <Banner status="warning">
+            <Text>Please log in to view your trade-in submissions.</Text>
+          </Banner>
+          <EmptyState filter="all" />
+        </BlockStack>
+      </Page>
+    );
+  }
+
+  // Submission detail view
   if (selectedSubmission) {
     return (
       <SubmissionDetail
         submissionNumber={selectedSubmission}
         onBack={handleBack}
+        token={token}
+        shopDomain={shopDomain}
       />
     );
   }
@@ -109,7 +182,9 @@ function TradeInPage() {
             <Text>Loading submissions...</Text>
           </BlockStack>
         ) : error ? (
-          <Text appearance="critical">{error}</Text>
+          <Banner status="critical">
+            <Text>{error}</Text>
+          </Banner>
         ) : submissions.length === 0 ? (
           <EmptyState filter={activeFilter} />
         ) : (

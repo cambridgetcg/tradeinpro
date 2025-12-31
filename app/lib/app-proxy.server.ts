@@ -1,8 +1,10 @@
 /**
  * Shopify App Proxy authentication and validation
  * Validates HMAC signatures for requests coming through App Proxy
+ * Also supports Session Token (JWT) authentication for Customer Account UI Extensions
  *
  * @see https://shopify.dev/docs/apps/online-store/app-proxies
+ * @see https://shopify.dev/docs/api/customer-account-ui-extensions/apis/session-token
  */
 
 import crypto from "crypto";
@@ -24,6 +26,180 @@ export interface AppProxyContext {
 export interface AppProxyContextWithCustomer extends AppProxyContext {
   customerId: string;
   internalCustomerId: string;
+}
+
+/**
+ * Session Token (JWT) claims from Customer Account UI Extensions
+ * @see https://shopify.dev/docs/api/customer-account-ui-extensions/apis/session-token
+ */
+export interface SessionTokenClaims {
+  /** Shopify store URL */
+  dest: string;
+  /** App Client ID */
+  aud: string;
+  /** Token expiration timestamp */
+  exp: number;
+  /** Token "not before" timestamp */
+  nbf: number;
+  /** Token issued at timestamp */
+  iat: number;
+  /** Unique token identifier (nonce) */
+  jti: string;
+  /** Customer GID (e.g., "gid://shopify/Customer/12345") - only present if customer is logged in */
+  sub?: string;
+}
+
+// ============================================================================
+// Session Token (JWT) Validation for Customer Account UI Extensions
+// ============================================================================
+
+/**
+ * Extract Bearer token from Authorization header
+ */
+function extractBearerToken(request: Request): string | null {
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  return authHeader.substring(7);
+}
+
+/**
+ * Base64URL decode (JWT uses base64url encoding)
+ */
+function base64UrlDecode(str: string): string {
+  // Add padding if needed
+  const padded = str + "=".repeat((4 - (str.length % 4)) % 4);
+  // Replace URL-safe chars with standard base64 chars
+  const base64 = padded.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+
+/**
+ * Verify JWT signature using HMAC-SHA256
+ */
+function verifyJwtSignature(
+  header: string,
+  payload: string,
+  signature: string,
+  secret: string
+): boolean {
+  const signatureInput = `${header}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(signatureInput)
+    .digest("base64url");
+
+  // Timing-safe comparison
+  try {
+    const signatureBuffer = Buffer.from(signature, "base64url");
+    const expectedBuffer = Buffer.from(expectedSignature, "base64url");
+
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate and decode a Shopify Session Token (JWT)
+ *
+ * Session tokens are JWTs signed with the app's API secret.
+ * They contain customer identity in the 'sub' claim.
+ *
+ * @param token - The JWT token string
+ * @returns Decoded claims if valid, null if invalid
+ */
+export function validateSessionToken(token: string): SessionTokenClaims | null {
+  console.log("[validateSessionToken] Starting validation");
+
+  const secret = process.env.SHOPIFY_API_SECRET;
+  if (!secret) {
+    console.error("[validateSessionToken] SHOPIFY_API_SECRET not configured");
+    return null;
+  }
+  console.log("[validateSessionToken] API_SECRET present (length:", secret.length, ")");
+
+  const clientId = process.env.SHOPIFY_API_KEY;
+  if (!clientId) {
+    console.error("[validateSessionToken] SHOPIFY_API_KEY not configured");
+    return null;
+  }
+  console.log("[validateSessionToken] API_KEY:", clientId);
+
+  try {
+    // Split JWT into parts
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      console.warn("[validateSessionToken] Invalid JWT format, parts:", parts.length);
+      return null;
+    }
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+
+    // Decode payload first to log the claims for debugging
+    const payloadJson = base64UrlDecode(payloadB64);
+    const claims = JSON.parse(payloadJson) as SessionTokenClaims;
+    console.log("[validateSessionToken] Token claims:", {
+      dest: claims.dest,
+      aud: claims.aud,
+      sub: claims.sub,
+      exp: new Date(claims.exp * 1000).toISOString(),
+      nbf: new Date(claims.nbf * 1000).toISOString(),
+      iat: new Date(claims.iat * 1000).toISOString(),
+    });
+
+    // Verify signature
+    const signatureValid = verifyJwtSignature(headerB64, payloadB64, signatureB64, secret);
+    console.log("[validateSessionToken] Signature verification:", signatureValid ? "PASSED" : "FAILED");
+    if (!signatureValid) {
+      console.warn("[validateSessionToken] Session token signature verification failed");
+      return null;
+    }
+
+    // Verify audience matches our client ID
+    if (claims.aud !== clientId) {
+      console.warn(`[validateSessionToken] Audience mismatch: expected ${clientId}, got ${claims.aud}`);
+      return null;
+    }
+    console.log("[validateSessionToken] Audience check: PASSED");
+
+    // Check expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.exp < now) {
+      console.warn("[validateSessionToken] Token expired at", new Date(claims.exp * 1000).toISOString());
+      return null;
+    }
+    console.log("[validateSessionToken] Expiration check: PASSED (expires in", claims.exp - now, "seconds)");
+
+    // Check not-before
+    if (claims.nbf > now) {
+      console.warn("[validateSessionToken] Token not yet valid until", new Date(claims.nbf * 1000).toISOString());
+      return null;
+    }
+    console.log("[validateSessionToken] NBF check: PASSED");
+
+    console.log("[validateSessionToken] All checks passed, token is valid");
+    return claims;
+  } catch (error) {
+    console.error("[validateSessionToken] Failed to validate session token:", error);
+    return null;
+  }
+}
+
+/**
+ * Extract Shopify customer ID from session token 'sub' claim
+ * The sub claim format is: "gid://shopify/Customer/12345"
+ *
+ * @param sub - The 'sub' claim value
+ * @returns Customer ID string or null
+ */
+function extractCustomerIdFromSub(sub: string): string | null {
+  const match = sub.match(/^gid:\/\/shopify\/Customer\/(\d+)$/);
+  return match ? match[1] : null;
 }
 
 // ============================================================================
@@ -141,6 +317,13 @@ export function requireAppProxy(request: Request): AppProxyContext {
 /**
  * Require logged-in customer, throw 401 Response if not authenticated
  *
+ * Supports two authentication methods:
+ * 1. App Proxy - uses `logged_in_customer_id` query parameter from Shopify
+ * 2. Session Token (JWT) - uses Bearer token in Authorization header
+ *
+ * Auto-creates a customer record if one doesn't exist for the Shopify customer.
+ * This handles the case where a customer visits "My Trade-Ins" before submitting.
+ *
  * @param request - The incoming request
  * @returns AppProxyContext with customerId guaranteed
  * @throws Response with 401 status if not logged in
@@ -148,9 +331,87 @@ export function requireAppProxy(request: Request): AppProxyContext {
 export async function requireCustomer(
   request: Request
 ): Promise<AppProxyContextWithCustomer> {
-  const context = requireAppProxy(request);
+  let shopifyCustomerId: string | null = null;
+  let shop = "";
+  let locale = "en";
+  let timestamp = "";
+  let pathPrefix = "";
+  let authMethod: "app_proxy" | "session_token" = "app_proxy";
 
-  if (!context.customerId) {
+  console.log("[requireCustomer] Starting authentication check");
+
+  // First, try App Proxy validation (traditional method)
+  const appProxyContext = validateAppProxy(request);
+  console.log("[requireCustomer] App Proxy validation result:", {
+    isValid: appProxyContext.isValid,
+    hasCustomerId: !!appProxyContext.customerId,
+    shop: appProxyContext.shop,
+  });
+
+  if (appProxyContext.isValid && appProxyContext.customerId) {
+    // App Proxy auth successful with customer ID
+    shopifyCustomerId = appProxyContext.customerId;
+    shop = appProxyContext.shop;
+    locale = appProxyContext.locale;
+    timestamp = appProxyContext.timestamp;
+    pathPrefix = appProxyContext.path_prefix;
+    authMethod = "app_proxy";
+    console.log("[requireCustomer] Using App Proxy auth, customerId:", shopifyCustomerId);
+  } else {
+    // Try Session Token authentication (for Customer Account UI Extensions)
+    const bearerToken = extractBearerToken(request);
+    console.log("[requireCustomer] Trying Session Token auth, hasToken:", !!bearerToken);
+
+    if (bearerToken) {
+      console.log("[requireCustomer] Bearer token (first 50 chars):", bearerToken.substring(0, 50));
+      const claims = validateSessionToken(bearerToken);
+      console.log("[requireCustomer] Session Token validation result:", claims ? {
+        dest: claims.dest,
+        aud: claims.aud,
+        sub: claims.sub,
+        exp: new Date(claims.exp * 1000).toISOString(),
+      } : "null (invalid token)");
+
+      if (claims) {
+        // Session token is valid
+        if (claims.sub) {
+          // Extract customer ID from 'sub' claim (format: "gid://shopify/Customer/12345")
+          shopifyCustomerId = extractCustomerIdFromSub(claims.sub);
+          shop = claims.dest;
+          authMethod = "session_token";
+          console.log("[requireCustomer] Extracted customer ID:", shopifyCustomerId, "from sub:", claims.sub);
+
+          if (!shopifyCustomerId) {
+            console.warn(`[requireCustomer] Failed to parse customer ID from sub claim: ${claims.sub}`);
+          }
+        } else {
+          // Token valid but no customer ID (customer not logged in or no permission)
+          console.warn("[requireCustomer] Session token valid but no 'sub' claim - customer may not be logged in");
+        }
+      }
+    } else {
+      console.log("[requireCustomer] No Bearer token in Authorization header");
+    }
+
+    // If App Proxy signature exists but is invalid, and no valid session token, reject
+    const url = new URL(request.url);
+    const hasAppProxyParams = url.searchParams.get("signature") !== null;
+
+    if (hasAppProxyParams && !appProxyContext.isValid && !shopifyCustomerId) {
+      console.warn("[requireCustomer] App Proxy params exist but invalid, no session token");
+      throw new Response(
+        JSON.stringify({ error: "unauthorized", message: "Invalid request signature" }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+  }
+
+  // Require customer to be logged in
+  if (!shopifyCustomerId) {
+    console.warn("[requireCustomer] No customer ID found from any auth method");
     throw new Response(
       JSON.stringify({ error: "login_required", message: "Customer login required" }),
       {
@@ -160,21 +421,45 @@ export async function requireCustomer(
     );
   }
 
-  // Find internal customer record
-  const customer = await findCustomerByShopifyId(context.customerId);
+  console.log("[requireCustomer] Auth successful via", authMethod, "customerId:", shopifyCustomerId);
+
+  // Find or create internal customer record
+  let customer = await findCustomerByShopifyId(shopifyCustomerId);
+
   if (!customer) {
-    throw new Response(
-      JSON.stringify({ error: "customer_not_found", message: "Customer record not found" }),
-      {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
+    // Auto-create customer record for first-time visitors
+    // They can update their email when they submit their first trade-in
+    try {
+      customer = await prisma.customer.create({
+        data: {
+          shopifyCustomerId: shopifyCustomerId,
+          email: `shopify-${shopifyCustomerId}@pending.local`, // Placeholder until they submit
+        },
+      });
+      console.log(`Auto-created customer record for Shopify ID: ${shopifyCustomerId} (via ${authMethod})`);
+    } catch (error) {
+      // Handle race condition - another request might have created it
+      customer = await findCustomerByShopifyId(shopifyCustomerId);
+      if (!customer) {
+        console.error("Failed to create customer record:", error);
+        throw new Response(
+          JSON.stringify({ error: "customer_creation_failed", message: "Unable to create customer record" }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
-    );
+    }
   }
 
   return {
-    ...context,
-    customerId: context.customerId,
+    shop,
+    customerId: shopifyCustomerId,
+    locale,
+    timestamp,
+    isValid: true,
+    path_prefix: pathPrefix,
     internalCustomerId: customer.id,
   };
 }

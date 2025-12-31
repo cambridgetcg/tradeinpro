@@ -9,6 +9,7 @@ import {
 } from '@shopify/ui-extensions-react/customer-account';
 import { useState, useEffect } from 'react';
 import { fetchSubmissions } from './api/client';
+import { useSessionToken } from './hooks/useSessionToken';
 import type { CustomerStats } from './types';
 
 export default reactExtension(
@@ -17,19 +18,27 @@ export default reactExtension(
 );
 
 function ProfileWidget() {
+  const { token, decoded, loading: tokenLoading, isPreview } = useSessionToken();
   const [stats, setStats] = useState<CustomerStats | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const shopDomain = decoded?.shop || '';
+
   useEffect(() => {
-    fetchSubmissions({ limit: 1 })
+    if (!token || !shopDomain || isPreview) {
+      setLoading(false);
+      return;
+    }
+
+    fetchSubmissions(token, shopDomain, { limit: 1 })
       .then((data) => setStats(data.stats))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [token, shopDomain, isPreview]);
 
   const formatCurrency = (pence: number) => `£${(pence / 100).toFixed(2)}`;
 
-  if (loading) {
+  if (loading || tokenLoading) {
     return (
       <Card title="Trade-In Activity">
         <BlockStack inlineAlignment="center" padding="base">

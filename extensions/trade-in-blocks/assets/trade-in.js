@@ -127,6 +127,16 @@
       modalQuantityInput: document.querySelector("[data-quantity-input]"),
       modalPrice: document.querySelector("[data-modal-price]"),
       modalAddBtn: document.querySelector("[data-modal-add]"),
+      // Mobile Cart Widget
+      mobileCart: document.querySelector("[data-mobile-cart]"),
+      mobileCartToggle: document.querySelector("[data-mobile-cart-toggle]"),
+      mobileCartClose: document.querySelector("[data-mobile-cart-close]"),
+      mobileCartPanel: document.querySelector("[data-mobile-cart-panel]"),
+      mobileCartCount: document.querySelector("[data-mobile-cart-count]"),
+      mobileCartTotal: document.querySelector("[data-mobile-cart-total]"),
+      mobileCartItems: document.querySelector("[data-mobile-cart-items]"),
+      mobileCartSubtotal: document.querySelector("[data-mobile-cart-subtotal]"),
+      scrollToCheckout: document.querySelector("[data-scroll-to-checkout]"),
       // Customer email
       customerEmail: form.querySelector("[data-customer-email]"),
       emailError: form.querySelector("[data-email-error]"),
@@ -699,6 +709,7 @@
 
   function updateCart() {
     renderCart();
+    renderMobileCart();
     updateTotals();
     updateFormState();
     // Persist cart to localStorage
@@ -706,6 +717,106 @@
       saveCartToStorage();
     } else {
       clearCartStorage();
+    }
+  }
+
+  // ============================================================================
+  // Mobile Cart Widget
+  // ============================================================================
+
+  function renderMobileCart() {
+    const hasItems = state.cart.length > 0;
+    const itemCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+    const quotedTotal = state.cart.reduce(
+      (sum, item) => sum + item.pricePerItem * item.quantity,
+      0
+    );
+
+    // Show/hide mobile cart
+    if (elements.mobileCart) {
+      elements.mobileCart.hidden = !hasItems;
+    }
+
+    // Update count badge
+    if (elements.mobileCartCount) {
+      elements.mobileCartCount.textContent = itemCount;
+    }
+
+    // Update total in toggle button
+    if (elements.mobileCartTotal) {
+      elements.mobileCartTotal.textContent = formatMoney(quotedTotal);
+    }
+
+    // Update subtotal in panel
+    if (elements.mobileCartSubtotal) {
+      elements.mobileCartSubtotal.textContent = formatMoney(quotedTotal);
+    }
+
+    // Render items in mobile cart
+    if (elements.mobileCartItems) {
+      if (!hasItems) {
+        elements.mobileCartItems.innerHTML = `
+          <div class="trade-in-mobile-cart__empty">
+            <p>Your cart is empty</p>
+          </div>
+        `;
+      } else {
+        elements.mobileCartItems.innerHTML = state.cart
+          .map(
+            (item) => `
+          <div class="trade-in-mobile-cart__item">
+            <div class="trade-in-mobile-cart__item-image">
+              <img src="${item.imageUrl || CONFIG.defaultImagePlaceholder}" alt="${escapeHtml(item.cardName)}" loading="lazy" onerror="this.src='${CONFIG.defaultImagePlaceholder}'">
+            </div>
+            <div class="trade-in-mobile-cart__item-info">
+              <span class="trade-in-mobile-cart__item-name">${escapeHtml(item.cardName)}</span>
+              <span class="trade-in-mobile-cart__item-meta">${item.condition} x ${item.quantity}</span>
+            </div>
+            <span class="trade-in-mobile-cart__item-price">${formatMoney(item.pricePerItem * item.quantity)}</span>
+          </div>
+        `
+          )
+          .join("");
+      }
+    }
+  }
+
+  function openMobileCart() {
+    if (elements.mobileCart) {
+      elements.mobileCart.classList.add("trade-in-mobile-cart--expanded");
+      if (elements.mobileCartToggle) {
+        elements.mobileCartToggle.setAttribute("aria-expanded", "true");
+      }
+      // Prevent body scroll when cart is open
+      document.body.style.overflow = "hidden";
+    }
+  }
+
+  function closeMobileCart() {
+    if (elements.mobileCart) {
+      elements.mobileCart.classList.remove("trade-in-mobile-cart--expanded");
+      if (elements.mobileCartToggle) {
+        elements.mobileCartToggle.setAttribute("aria-expanded", "false");
+      }
+      // Restore body scroll
+      document.body.style.overflow = "";
+    }
+  }
+
+  function toggleMobileCart() {
+    if (elements.mobileCart?.classList.contains("trade-in-mobile-cart--expanded")) {
+      closeMobileCart();
+    } else {
+      openMobileCart();
+    }
+  }
+
+  function scrollToCheckoutSection() {
+    closeMobileCart();
+    // Scroll to the submit section or customer section
+    const targetSection = elements.submitSection || elements.customerSection;
+    if (targetSection) {
+      targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
@@ -1378,6 +1489,26 @@
     // Cart clear
     if (elements.cartClear) {
       elements.cartClear.addEventListener("click", clearCart);
+    }
+
+    // Mobile Cart Widget
+    if (elements.mobileCartToggle) {
+      elements.mobileCartToggle.addEventListener("click", toggleMobileCart);
+    }
+    if (elements.mobileCartClose) {
+      elements.mobileCartClose.addEventListener("click", closeMobileCart);
+    }
+    if (elements.scrollToCheckout) {
+      elements.scrollToCheckout.addEventListener("click", scrollToCheckoutSection);
+    }
+    // Close mobile cart when clicking outside the panel
+    if (elements.mobileCart) {
+      elements.mobileCart.addEventListener("click", (event) => {
+        // Only close if clicking on the overlay area (not the toggle or panel)
+        if (event.target === elements.mobileCart) {
+          closeMobileCart();
+        }
+      });
     }
 
     // Sort code auto-formatting

@@ -19,11 +19,15 @@ import type { SubmissionDetailResponse, ItemDetail } from '../types';
 interface SubmissionDetailProps {
   submissionNumber: string;
   onBack: () => void;
+  token: string | null;
+  shopDomain: string;
 }
 
 export function SubmissionDetail({
   submissionNumber,
   onBack,
+  token,
+  shopDomain,
 }: SubmissionDetailProps) {
   const [data, setData] = useState<SubmissionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,29 +35,44 @@ export function SubmissionDetail({
   const [actionLoading, setActionLoading] = useState(false);
 
   const loadDetail = async () => {
+    if (!token || !shopDomain) {
+      setError('Authentication required');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await fetchSubmissionDetail(submissionNumber);
+      const result = await fetchSubmissionDetail(token, shopDomain, submissionNumber);
       setData(result);
       setError(null);
-    } catch {
-      setError('Failed to load submission details');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load submission details';
+      setError(message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDetail();
-  }, [submissionNumber]);
+    if (token && shopDomain) {
+      loadDetail();
+    }
+  }, [submissionNumber, token, shopDomain]);
 
   const handleAction = async (action: 'accept' | 'reject', reason?: string) => {
+    if (!token || !shopDomain) {
+      setError('Authentication required');
+      return;
+    }
+
     setActionLoading(true);
     try {
-      await submitAction(submissionNumber, action, { reason });
+      await submitAction(token, shopDomain, submissionNumber, action, { reason });
       await loadDetail();
-    } catch {
-      setError('Action failed. Please try again.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Action failed. Please try again.';
+      setError(message);
     } finally {
       setActionLoading(false);
     }

@@ -159,22 +159,67 @@ function matchRoute(
 }
 
 // ============================================================================
+// Routes that support Session Token auth (Customer Account UI Extensions)
+// ============================================================================
+
+const SESSION_TOKEN_ROUTES = ["my-submissions"];
+
+function isSessionTokenRoute(path: string): boolean {
+  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+  const firstSegment = normalizedPath.split("/")[0];
+  return SESSION_TOKEN_ROUTES.includes(firstSegment);
+}
+
+// ============================================================================
 // Loader (GET requests)
 // ============================================================================
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   // Get the wildcard path from the splat param
   const splatPath = params["*"] || "";
+  const url = new URL(request.url);
+  const hasAuthHeader = request.headers.has("Authorization");
+  const hasAppProxyParams = url.searchParams.has("signature");
 
-  // Validate app proxy signature
-  const context = validateAppProxy(request);
-  if (!context.isValid) {
-    return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+  console.log(`[Storefront API] GET /${splatPath}`, {
+    hasAuthHeader,
+    hasAppProxyParams,
+    isSessionTokenRoute: isSessionTokenRoute(splatPath),
+  });
+
+  // For Session Token routes (my-submissions), allow Bearer token auth
+  // The handler will validate the token via requireCustomer()
+  if (isSessionTokenRoute(splatPath)) {
+    // Check if we have either App Proxy signature OR Authorization header
+    if (!hasAppProxyParams && !hasAuthHeader) {
+      console.warn(`[Storefront API] No auth method provided for ${splatPath}`);
+      return errorResponse(401, "unauthorized", "Authentication required");
+    }
+
+    // If App Proxy params exist, validate them
+    if (hasAppProxyParams) {
+      const context = validateAppProxy(request);
+      if (!context.isValid) {
+        console.warn(`[Storefront API] Invalid App Proxy signature for ${splatPath}`);
+        return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+      }
+      console.log(`[Storefront API] App Proxy auth valid for ${splatPath}`);
+    } else {
+      console.log(`[Storefront API] Using Bearer token auth for ${splatPath}`);
+    }
+  } else {
+    // Non-session-token routes require App Proxy validation
+    const context = validateAppProxy(request);
+    if (!context.isValid) {
+      console.warn(`[Storefront API] Invalid App Proxy signature for ${splatPath}`);
+      return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+    }
   }
 
   // Match the route
   const match = matchRoute(splatPath, "GET");
   if (!match) {
+    console.warn(`[Storefront API] Route not found: GET /${splatPath}`);
     return errorResponse(404, "not_found", `Route not found: GET /${splatPath}`);
   }
 
@@ -186,9 +231,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   } as LoaderFunctionArgs;
 
   try {
+    console.log(`[Storefront API] Calling handler for GET /${splatPath}`);
     return await match.handler(handlerArgs);
   } catch (error) {
-    console.error(`Storefront API error (GET /${splatPath}):`, error);
+    console.error(`[Storefront API] Error (GET /${splatPath}):`, error);
 
     // If it's already a Response, return it
     if (error instanceof Response) {
@@ -207,16 +253,45 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Get the wildcard path from the splat param
   const splatPath = params["*"] || "";
   const method = request.method;
+  const url = new URL(request.url);
+  const hasAuthHeader = request.headers.has("Authorization");
+  const hasAppProxyParams = url.searchParams.has("signature");
 
-  // Validate app proxy signature
-  const context = validateAppProxy(request);
-  if (!context.isValid) {
-    return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+  console.log(`[Storefront API] ${method} /${splatPath}`, {
+    hasAuthHeader,
+    hasAppProxyParams,
+    isSessionTokenRoute: isSessionTokenRoute(splatPath),
+  });
+
+  // For Session Token routes (my-submissions), allow Bearer token auth
+  if (isSessionTokenRoute(splatPath)) {
+    if (!hasAppProxyParams && !hasAuthHeader) {
+      console.warn(`[Storefront API] No auth method provided for ${splatPath}`);
+      return errorResponse(401, "unauthorized", "Authentication required");
+    }
+
+    if (hasAppProxyParams) {
+      const context = validateAppProxy(request);
+      if (!context.isValid) {
+        console.warn(`[Storefront API] Invalid App Proxy signature for ${splatPath}`);
+        return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+      }
+      console.log(`[Storefront API] App Proxy auth valid for ${splatPath}`);
+    } else {
+      console.log(`[Storefront API] Using Bearer token auth for ${splatPath}`);
+    }
+  } else {
+    const context = validateAppProxy(request);
+    if (!context.isValid) {
+      console.warn(`[Storefront API] Invalid App Proxy signature for ${splatPath}`);
+      return errorResponse(401, "unauthorized", "Invalid app proxy signature");
+    }
   }
 
   // Match the route
   const match = matchRoute(splatPath, method);
   if (!match) {
+    console.warn(`[Storefront API] Route not found: ${method} /${splatPath}`);
     return errorResponse(404, "not_found", `Route not found: ${method} /${splatPath}`);
   }
 
@@ -228,9 +303,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } as ActionFunctionArgs;
 
   try {
+    console.log(`[Storefront API] Calling handler for ${method} /${splatPath}`);
     return await match.handler(handlerArgs);
   } catch (error) {
-    console.error(`Storefront API error (${method} /${splatPath}):`, error);
+    console.error(`[Storefront API] Error (${method} /${splatPath}):`, error);
 
     // If it's already a Response, return it
     if (error instanceof Response) {
