@@ -4,10 +4,13 @@
  * React hook for managing Shopify session tokens with auto-refresh.
  * Tokens expire in 5 minutes, so we refresh every 4 minutes to prevent expiration.
  *
+ * For Customer Account UI Extensions, we use the useApi() hook to access sessionToken.
+ *
  * @see https://shopify.dev/docs/api/customer-account-ui-extensions/apis/session-token
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useApi } from '@shopify/ui-extensions-react/customer-account';
 import { CONFIG } from '../config';
 import {
   decodeSessionToken,
@@ -37,6 +40,10 @@ export interface UseSessionTokenResult {
  * Hook for managing Shopify session tokens with auto-refresh
  */
 export function useSessionToken(): UseSessionTokenResult {
+  // Get session token API from Customer Account UI Extension context
+  const api = useApi();
+  const sessionTokenApi = api.sessionToken;
+
   const [token, setToken] = useState<string | null>(null);
   const [decoded, setDecoded] = useState<DecodedSessionToken | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,26 +59,15 @@ export function useSessionToken(): UseSessionTokenResult {
     console.log('[useSessionToken] Fetching token...');
 
     try {
-      // The global 'shopify' object is injected by the extension runtime
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const shopifyGlobal = typeof (globalThis as any).shopify !== 'undefined' ? (globalThis as any).shopify : null;
-
-      if (!shopifyGlobal) {
-        console.error('[useSessionToken] shopify global is undefined');
+      if (!sessionTokenApi) {
+        console.error('[useSessionToken] sessionToken API not available from useApi()');
         setError('Shopify session token API not available');
         setLoading(false);
         return;
       }
 
-      if (!shopifyGlobal.sessionToken) {
-        console.error('[useSessionToken] shopify.sessionToken is undefined');
-        setError('Shopify session token API not available');
-        setLoading(false);
-        return;
-      }
-
-      console.log('[useSessionToken] Calling shopify.sessionToken.get()...');
-      const newToken = await shopifyGlobal.sessionToken.get();
+      console.log('[useSessionToken] Calling sessionToken.get()...');
+      const newToken = await sessionTokenApi.get();
       console.log('[useSessionToken] Token received:', newToken ? `${newToken.substring(0, 50)}...` : 'null');
 
       if (!newToken) {
@@ -139,7 +135,7 @@ export function useSessionToken(): UseSessionTokenResult {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionTokenApi]);
 
   /**
    * Set up auto-refresh interval
