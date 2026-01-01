@@ -54,6 +54,26 @@
   };
 
   // ============================================================================
+  // Idempotency Key Generation
+  // ============================================================================
+
+  /**
+   * Generate a UUID v4 for idempotency key
+   * Uses crypto.randomUUID if available, otherwise falls back to manual generation
+   */
+  function generateIdempotencyKey() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    // Fallback UUID v4 generation for older browsers
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  // ============================================================================
   // DOM Elements
   // ============================================================================
 
@@ -203,14 +223,32 @@
   }
 
   async function createSubmission(data) {
+    // Generate idempotency key to prevent duplicate submissions on network retry
+    const idempotencyKey = generateIdempotencyKey();
+
     try {
       const response = await fetch(`${elements.apiBase}/submissions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify(data),
       });
 
       const result = await response.json();
+
+      // Check if this was a duplicate request (idempotent replay)
+      if (response.headers.get("X-Idempotent-Replay") === "true") {
+        console.log("[trade-in] Idempotent replay detected - returning cached response");
+      }
+
+      // Handle duplicate detection
+      if (result.duplicate) {
+        console.log("[trade-in] Duplicate submission detected:", result.submissionId);
+        // Still treat as success - the submission exists
+        return result;
+      }
 
       if (!response.ok) {
         return {
@@ -1061,7 +1099,15 @@
     state.isSubmitting = false;
 
     if (result.success) {
-      const submissionNumber = result.submission.submissionNumber;
+      // Get submission number - handle both normal and duplicate responses
+      const submissionNumber = result.submission?.submissionNumber;
+
+      if (!submissionNumber) {
+        console.error("[trade-in] No submission number in response:", result);
+        showError("Submission created but reference number unavailable. Please contact support.");
+        showFormSection("form");
+        return;
+      }
 
       // Show success
       if (elements.submissionNumber) {

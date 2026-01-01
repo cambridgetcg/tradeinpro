@@ -3,6 +3,8 @@
  *
  * GET  /apps/trade-in/submissions     - List customer's submissions (requires login)
  * POST /apps/trade-in/submissions     - Create new submission (allows guest with email)
+ *
+ * Idempotency: POST requests support X-Idempotency-Key header for duplicate prevention
  */
 
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
@@ -20,10 +22,17 @@ import {
   createSubmission,
   getCustomerSubmissions,
   submitSubmission,
+  getSubmissionById,
   type CreateItemInput,
 } from "../lib/submissions.server";
 import { sendSubmissionCreatedNotification } from "../lib/notifications.server";
 import { Condition, PayoutType, type ConditionType, type PayoutTypeValue } from "../lib/constants";
+import {
+  checkIdempotency,
+  recordIdempotency,
+  generateContentHash,
+  getIdempotencyKeyFromRequest,
+} from "../lib/idempotency.server";
 
 // ============================================================================
 // GET - List customer submissions
@@ -68,6 +77,9 @@ export async function action({ request }: ActionFunctionArgs) {
   // Validate App Proxy (allows guest)
   const context = requireAppProxy(request);
 
+  // Get idempotency key from header (optional but recommended)
+  const idempotencyKey = getIdempotencyKeyFromRequest(request);
+
   // Parse request body
   let body: CreateSubmissionRequest;
   try {
@@ -80,6 +92,69 @@ export async function action({ request }: ActionFunctionArgs) {
   const validation = validateCreateSubmissionRequest(body);
   if (!validation.valid) {
     return errorResponse(400, "validation_error", "Validation failed", validation.errors);
+  }
+
+  // Generate content hash for duplicate detection
+  const contentHash = generateContentHash({
+    email: body.email,
+    items: body.items.map((item) => ({
+      cardPriceId: item.cardPriceId,
+      cardName: item.cardName,
+      quantity: item.quantity,
+      conditionClaimed: item.conditionClaimed,
+    })),
+  });
+
+  // Check for duplicate submission
+  const idempotencyCheck = await checkIdempotency({
+    idempotencyKey,
+    email: body.email,
+    contentHash,
+    customerId: context.customerId || undefined,
+  });
+
+  if (idempotencyCheck.isDuplicate) {
+    console.log(
+      `[api.submissions] Duplicate detected - key: ${idempotencyKey}, hash: ${contentHash}`
+    );
+
+    // Return cached response if available (exact replay)
+    if (idempotencyCheck.cachedResponse) {
+      return new Response(idempotencyCheck.cachedResponse.body, {
+        status: idempotencyCheck.cachedResponse.status,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Idempotent-Replay": "true",
+        },
+      });
+    }
+
+    // Fetch the existing submission to return full details
+    if (idempotencyCheck.existingSubmissionId) {
+      const existingSubmission = await getSubmissionById(idempotencyCheck.existingSubmissionId);
+      if (existingSubmission) {
+        return jsonResponse(
+          {
+            success: true,
+            duplicate: true,
+            message: "Submission already exists",
+            submission: formatSubmissionForResponse(existingSubmission),
+          },
+          200
+        );
+      }
+    }
+
+    // Fallback if submission not found (shouldn't happen normally)
+    return jsonResponse(
+      {
+        success: true,
+        duplicate: true,
+        message: "Submission already exists",
+        submissionId: idempotencyCheck.existingSubmissionId,
+      },
+      200
+    );
   }
 
   try {
@@ -142,21 +217,32 @@ export async function action({ request }: ActionFunctionArgs) {
     // This makes it visible in the admin queue immediately
     const submittedSubmission = await submitSubmission(result.submission!.id);
 
-    // Send confirmation email to customer
-    try {
-      await sendSubmissionCreatedNotification(submittedSubmission);
-    } catch (notifyError) {
-      console.error("Failed to send submission confirmation email:", notifyError);
-      // Don't fail the request, submission is still created
-    }
+    // Build success response
+    const responseBody = JSON.stringify({
+      success: true,
+      submission: formatSubmissionForResponse(submittedSubmission),
+    });
 
-    return jsonResponse(
-      {
-        success: true,
-        submission: formatSubmissionForResponse(submittedSubmission),
-      },
-      201
-    );
+    // Record for idempotency (async, non-blocking)
+    recordIdempotency({
+      idempotencyKey,
+      contentHash,
+      email: body.email,
+      customerId: context.customerId || undefined,
+      submissionId: submittedSubmission.id,
+      responseStatus: 201,
+      responseBody,
+    }).catch((err) => console.error("[api.submissions] Failed to record idempotency:", err));
+
+    // Send confirmation email to customer (async, non-blocking)
+    sendSubmissionCreatedNotification(submittedSubmission).catch((notifyError) => {
+      console.error("Failed to send submission confirmation email:", notifyError);
+    });
+
+    return new Response(responseBody, {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("Create submission error:", error);
     return errorResponse(500, "creation_failed", "An error occurred while creating submission");

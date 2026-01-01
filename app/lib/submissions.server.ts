@@ -4,9 +4,22 @@
  */
 
 import prisma from "../db.server";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, TradeInSubmission } from "@prisma/client";
 import { Condition, formatPrice, PayoutType, type ConditionType, type PayoutTypeValue } from "./constants";
 import { getOrCreateSettings, getMultiplierFromSettings } from "./settings.server";
+import {
+  isUniqueConstraintError,
+  getConstraintFields,
+  sleep,
+  calculateBackoffDelay,
+} from "./prisma-errors";
+
+// ============================================================================
+// Retry Configuration
+// ============================================================================
+
+const MAX_SUBMISSION_NUMBER_RETRIES = 5;
+const RETRY_BASE_DELAY_MS = 50;
 
 // ============================================================================
 // Types
@@ -309,8 +322,11 @@ export async function getSubmissionSettings(): Promise<SubmissionSettings> {
 
 /**
  * Generate unique submission number in format: TRD-YYYYMM-XXXXX
+ *
+ * @param retryOffset - Additional offset to add to sequence number on retry
+ *                      Used to avoid collisions when concurrent requests get same count
  */
-export async function generateSubmissionNumber(): Promise<string> {
+export async function generateSubmissionNumber(retryOffset: number = 0): Promise<string> {
   const now = new Date();
   const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
   const prefix = `TRD-${yearMonth}`;
@@ -324,7 +340,9 @@ export async function generateSubmissionNumber(): Promise<string> {
     },
   });
 
-  const sequence = String(count + 1).padStart(5, "0");
+  // Add retryOffset to handle concurrent request collisions
+  const sequenceNumber = count + 1 + retryOffset;
+  const sequence = String(sequenceNumber).padStart(5, "0");
   return `${prefix}-${sequence}`;
 }
 
@@ -334,6 +352,9 @@ export async function generateSubmissionNumber(): Promise<string> {
 
 /**
  * Find or create a customer by Shopify ID or email
+ *
+ * Also updates placeholder customer records (auto-created when customer
+ * first visits My Trade-Ins page) with their real email and name.
  */
 export async function getOrCreateCustomer(params: {
   shopifyCustomerId?: string;
@@ -351,6 +372,23 @@ export async function getOrCreateCustomer(params: {
     });
 
     if (existing) {
+      // Update placeholder email and name if this is their first real submission
+      const isPlaceholderEmail = existing.email.endsWith("@pending.local");
+      const needsUpdate =
+        isPlaceholderEmail ||
+        (!existing.firstName && firstName) ||
+        (!existing.lastName && lastName);
+
+      if (needsUpdate) {
+        return prisma.customer.update({
+          where: { id: existing.id },
+          data: {
+            email: isPlaceholderEmail ? normalizedEmail : existing.email,
+            firstName: existing.firstName || firstName,
+            lastName: existing.lastName || lastName,
+          },
+        });
+      }
       return existing;
     }
   }
@@ -572,6 +610,56 @@ export async function validateSubmission(
 // ============================================================================
 
 /**
+ * Internal helper to create submission with retry on unique constraint violation
+ * Handles race condition where concurrent requests get same submission number
+ */
+async function createSubmissionWithRetry(
+  submissionData: Prisma.TradeInSubmissionCreateInput,
+  attempt: number = 0
+): Promise<TradeInSubmission & { items: any[]; customer: any }> {
+  try {
+    return await prisma.tradeInSubmission.create({
+      data: submissionData,
+      include: {
+        items: true,
+        customer: true,
+      },
+    });
+  } catch (error) {
+    // Check if this is a unique constraint violation on submissionNumber
+    if (isUniqueConstraintError(error)) {
+      const fields = getConstraintFields(error);
+
+      if (
+        fields.includes("submissionNumber") &&
+        attempt < MAX_SUBMISSION_NUMBER_RETRIES
+      ) {
+        // Log retry attempt for monitoring
+        console.log(
+          `[createSubmission] Submission number collision, retry ${attempt + 1}/${MAX_SUBMISSION_NUMBER_RETRIES}`
+        );
+
+        // Wait with exponential backoff before retrying
+        const delay = calculateBackoffDelay(attempt, RETRY_BASE_DELAY_MS);
+        await sleep(delay);
+
+        // Generate new submission number with higher offset
+        const newSubmissionNumber = await generateSubmissionNumber(attempt + 1);
+
+        // Retry with new submission number
+        return createSubmissionWithRetry(
+          { ...submissionData, submissionNumber: newSubmissionNumber },
+          attempt + 1
+        );
+      }
+    }
+
+    // Not a retryable error, or max retries exceeded
+    throw error;
+  }
+}
+
+/**
  * Create a new trade-in submission (OPTIMIZED)
  *
  * Performance improvements:
@@ -579,6 +667,7 @@ export async function validateSubmission(
  * - Single batch card lookup via validateAndPrepareItems
  * - No additional DB queries when creating items (uses pre-calculated prices)
  * - Settings cached for request duration
+ * - Automatic retry on submission number collision
  *
  * Before: 40-60 DB queries for 10 items
  * After: 6-8 DB queries for any number of items
@@ -616,51 +705,48 @@ export async function createSubmission(input: CreateSubmissionInput, shop?: stri
     ? Math.floor(totalValue * (settings.storeCreditBonusPercent / 100))
     : 0;
 
-  // 5. Create submission with PRE-CALCULATED items (1 transaction, no additional lookups)
+  // 5. Build submission data
   // NOTE: cardPriceId is set to null because we're using CardPriceV2 for lookups,
   // and the TradeInItem.cardPriceId FK references the legacy CardPrice table.
   // Card details are denormalized in the item record anyway.
-  const submission = await prisma.tradeInSubmission.create({
-    data: {
-      submissionNumber,
-      customerId: customer.id,
-      status: "DRAFT",
-      payoutType: input.payoutType,
-      quotedTotal: totalValue,
-      bonusAmount,
-      // Bank details (only stored when payoutType is BANK)
-      ...(input.payoutType === PayoutType.BANK && {
-        bankAccountName: input.bankAccountName,
-        bankSortCode: input.bankSortCode,
-        bankAccountNumber: input.bankAccountNumber,
-      }),
-      // Contact preferences
-      phone: input.phone || null,
-      contactChannel: input.contactChannel || null,
-      items: {
-        create: validatedItems
-          .filter(vi => vi.isValid)
-          .map(vi => ({
-            cardPriceId: null, // CardPriceV2 IDs are incompatible with CardPrice FK
-            cardName: vi.input.cardName,
-            setName: vi.input.setName,
-            setCode: vi.input.setCode || null,
-            variant: vi.input.variant || null,
-            quantity: vi.input.quantity,
-            conditionClaimed: vi.input.conditionClaimed,
-            marketPricePence: vi.marketPricePence, // Store for grading recalculations
-            quotedPrice: vi.price * vi.input.quantity,
-            status: "PENDING",
-          })),
-      },
+  const submissionData: Prisma.TradeInSubmissionCreateInput = {
+    submissionNumber,
+    customer: { connect: { id: customer.id } },
+    status: "DRAFT",
+    payoutType: input.payoutType,
+    quotedTotal: totalValue,
+    bonusAmount,
+    // Bank details (only stored when payoutType is BANK)
+    ...(input.payoutType === PayoutType.BANK && {
+      bankAccountName: input.bankAccountName,
+      bankSortCode: input.bankSortCode,
+      bankAccountNumber: input.bankAccountNumber,
+    }),
+    // Contact preferences
+    phone: input.phone || null,
+    contactChannel: input.contactChannel || null,
+    items: {
+      create: validatedItems
+        .filter(vi => vi.isValid)
+        .map(vi => ({
+          cardPriceId: null, // CardPriceV2 IDs are incompatible with CardPrice FK
+          cardName: vi.input.cardName,
+          setName: vi.input.setName,
+          setCode: vi.input.setCode || null,
+          variant: vi.input.variant || null,
+          quantity: vi.input.quantity,
+          conditionClaimed: vi.input.conditionClaimed,
+          marketPricePence: vi.marketPricePence, // Store for grading recalculations
+          quotedPrice: vi.price * vi.input.quantity,
+          status: "PENDING",
+        })),
     },
-    include: {
-      items: true,
-      customer: true,
-    },
-  });
+  };
 
-  // 6. Clear cache after request completes
+  // 6. Create submission with automatic retry on collision
+  const submission = await createSubmissionWithRetry(submissionData);
+
+  // 7. Clear cache after request completes
   clearSettingsCache();
 
   return { success: true, submission };

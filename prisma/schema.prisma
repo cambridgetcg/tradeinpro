@@ -478,6 +478,19 @@ model TradeInSettings {
   termsAndConditions     String?
   gradingGuideUrl        String?
 
+  // CTA Block Settings (synced to Shopify metafields)
+  ctaTitle               String?  @map("cta_title")
+  ctaDescription         String?  @map("cta_description")
+  ctaButtonText          String?  @map("cta_button_text")
+  ctaButtonLink          String?  @map("cta_button_link")
+  ctaShowFeatures        Boolean  @default(true) @map("cta_show_features")
+  ctaFeature1Title       String?  @map("cta_feature_1_title")
+  ctaFeature1Desc        String?  @map("cta_feature_1_desc")
+  ctaFeature2Title       String?  @map("cta_feature_2_title")
+  ctaFeature2Desc        String?  @map("cta_feature_2_desc")
+  ctaFeature3Title       String?  @map("cta_feature_3_title")
+  ctaFeature3Desc        String?  @map("cta_feature_3_desc")
+
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
@@ -491,4 +504,36 @@ model ExcludedTradeInCard {
   excludedBy  String?  @map("excluded_by")    // Who excluded it (admin email/name)
 
   @@map("excluded_trade_in_cards")
+}
+
+// Idempotency tracking for duplicate submission prevention
+// Records expire after 24 hours and should be cleaned up periodically
+model IdempotencyRecord {
+  id              String   @id @default(cuid())
+
+  // Client-provided idempotency key (UUID)
+  idempotencyKey  String   @unique @map("idempotency_key")
+
+  // Content-based fingerprint (SHA-256 hash of email + normalized items)
+  contentHash     String?  @map("content_hash")
+
+  // Associated submission (if created successfully)
+  submissionId    String?  @map("submission_id")
+
+  // Request metadata
+  customerId      String?  @map("customer_id")
+  email           String
+
+  // Cached response for duplicate requests
+  responseStatus  Int      @default(201) @map("response_status")
+  responseBody    String?  @map("response_body") @db.Text
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at")
+  expiresAt       DateTime @map("expires_at")
+
+  @@index([contentHash], map: "idx_idempotency_content_hash")
+  @@index([email, createdAt], map: "idx_idempotency_email_created")
+  @@index([expiresAt], map: "idx_idempotency_expires")
+  @@map("idempotency_records")
 }
