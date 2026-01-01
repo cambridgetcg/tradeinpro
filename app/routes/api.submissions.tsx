@@ -33,6 +33,7 @@ import {
   generateContentHash,
   getIdempotencyKeyFromRequest,
 } from "../lib/idempotency.server";
+import prisma from "../db.server";
 
 // ============================================================================
 // GET - List customer submissions
@@ -158,17 +159,50 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Fallback: Try to find the submission by content hash
-    console.log(`[api.submissions] WARNING: Hitting fallback path - no existingSubmissionId or submission not found`);
+    // Fallback: Try to find recent submission by email
+    console.log(`[api.submissions] WARNING: Hitting fallback path - searching for recent submission by email`);
 
-    // Last resort: search for recent submission with same email
-    // This shouldn't happen in normal operation
+    try {
+      // Search for recent submission from this email
+      const recentSubmission = await prisma.tradeInSubmission.findFirst({
+        where: {
+          customer: {
+            email: body.email.toLowerCase().trim(),
+          },
+          createdAt: {
+            gte: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          items: true,
+          customer: true,
+        },
+      });
+
+      if (recentSubmission) {
+        console.log(`[api.submissions] Found recent submission via email search: ${recentSubmission.submissionNumber}`);
+        return jsonResponse(
+          {
+            success: true,
+            duplicate: true,
+            message: "Submission already exists",
+            submission: formatSubmissionForResponse(recentSubmission),
+          },
+          200
+        );
+      }
+    } catch (searchError) {
+      console.error(`[api.submissions] Fallback search failed:`, searchError);
+    }
+
+    // Last resort: return an error
     return jsonResponse(
       {
         success: false,
         duplicate: true,
         error: "duplicate_detected",
-        message: "A similar submission was recently created. Please check your submissions or try again later.",
+        message: "A similar submission was recently created. Please check your email for confirmation or try again in a few minutes.",
       },
       409
     );
