@@ -3,15 +3,15 @@
  * Handles card search, browse, cart management, and form submission
  * Enhanced with card images and set filtering
  *
- * @version 2.1.0-20260101
- * @updated 2026-01-01T18:45:00Z
+ * @version 3.0.0-20260101
+ * @updated 2026-01-01T19:55:00Z
  */
 
 (function () {
   "use strict";
 
   // Version check - log to confirm latest code is running
-  console.log("[trade-in] Script loaded - version 2.1.0-20260101");
+  console.log("[trade-in] Script loaded - version 3.0.0-20260101 (dynamic success page)");
 
   // ============================================================================
   // Configuration
@@ -1109,102 +1109,135 @@
 
     state.isSubmitting = false;
 
-    // === OPTIMIZED SUCCESS HANDLING v2 ===
-    console.log("[trade-in] === SUBMISSION RESPONSE ===");
+    // === OPTIMIZED SUCCESS HANDLING v3 - Dynamic Generation ===
+    console.log("[trade-in] === SUBMISSION RESPONSE v3 ===");
     console.log("[trade-in] result:", result);
-    console.log("[trade-in] result.success:", result.success);
-    console.log("[trade-in] result.submission:", result.submission);
 
     if (result.success) {
       try {
-        // Step 1: Extract submission number with multiple fallbacks
-        let submissionNumber = null;
+        // Step 1: Extract submission data
+        const submission = result.submission || {};
+        const submissionNumber = submission.submissionNumber || result.submissionNumber;
 
-        if (result.submission && typeof result.submission === 'object') {
-          submissionNumber = result.submission.submissionNumber;
-          console.log("[trade-in] Extracted from result.submission.submissionNumber:", submissionNumber);
-        }
+        console.log("[trade-in] Extracted submissionNumber:", submissionNumber);
 
-        // Fallback: check if submissionNumber is at root level
-        if (!submissionNumber && result.submissionNumber) {
-          submissionNumber = result.submissionNumber;
-          console.log("[trade-in] Fallback: found at result.submissionNumber:", submissionNumber);
-        }
-
-        // Validate submission number format
-        if (!submissionNumber || typeof submissionNumber !== 'string' || !submissionNumber.startsWith('TRD-')) {
+        // Validate submission number
+        if (!submissionNumber || typeof submissionNumber !== 'string') {
           console.error("[trade-in] Invalid submission number:", submissionNumber);
-          console.error("[trade-in] Full result object:", JSON.stringify(result, null, 2));
           showError("Submission created but reference number unavailable. Please contact support.");
           showFormSection("form");
           return;
         }
 
-        console.log("[trade-in] ✓ Valid submissionNumber:", submissionNumber);
-
-        // Step 2: Store in localStorage as backup
+        // Step 2: Store in localStorage
         try {
           localStorage.setItem('tradein_last_submission', JSON.stringify({
-            submissionNumber: submissionNumber,
+            submissionNumber,
             timestamp: Date.now(),
-            quotedTotal: result.submission?.quotedTotal
+            quotedTotal: submission.quotedTotal
           }));
-          console.log("[trade-in] ✓ Saved to localStorage");
-        } catch (storageErr) {
-          console.warn("[trade-in] localStorage save failed:", storageErr);
-        }
+        } catch (e) { /* ignore */ }
 
-        // Step 3: Update DOM elements with verification
-        console.log("[trade-in] Updating DOM elements...");
-        console.log("[trade-in] elements.submissionNumber:", elements.submissionNumber);
-
-        if (elements.submissionNumber) {
-          elements.submissionNumber.textContent = submissionNumber;
-          elements.submissionNumber.setAttribute('data-value', submissionNumber);
-          console.log("[trade-in] ✓ Set submissionNumber element to:", elements.submissionNumber.textContent);
-        } else {
-          console.error("[trade-in] ✗ elements.submissionNumber is null!");
-          // Try to find it manually
-          const fallbackEl = document.querySelector('[data-submission-number]');
-          if (fallbackEl) {
-            fallbackEl.textContent = submissionNumber;
-            console.log("[trade-in] ✓ Found via fallback selector, set to:", submissionNumber);
-          }
-        }
-
-        // Update links
+        // Step 3: Build success page dynamically (bypasses theme customizations)
         const apiBase = elements.apiBase || '/apps/trade-in';
+        const itemCount = submission.items?.length || state.cart.length || 0;
+        const quotedTotal = submission.quotedTotal || calculateCartTotal();
+        const payoutType = submission.payoutType || 'STORE_CREDIT';
+        const bonusAmount = submission.bonusAmount || 0;
 
-        if (elements.trackingLink) {
-          elements.trackingLink.href = `${apiBase}/track?number=${submissionNumber}`;
-        }
-        if (elements.packingSlipLink) {
-          elements.packingSlipLink.href = `${apiBase}/packing-slip/${submissionNumber}`;
-        }
-        if (elements.shippingLink) {
-          elements.shippingLink.href = `${apiBase}/shipping-instructions/${submissionNumber}`;
-        }
-        console.log("[trade-in] ✓ Updated all links");
+        const successHTML = `
+          <div class="trade-in-success" style="text-align: center; max-width: 600px; margin: 0 auto; padding: 2rem;">
+            <div style="width: 64px; height: 64px; margin: 0 auto 1.5rem; color: #10B981;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
 
-        // Step 4: Show success state
+            <h3 style="font-size: 1.5rem; font-weight: 700; margin: 0 0 0.5rem;">Trade-In Submitted!</h3>
+            <p style="color: #666; margin: 0 0 1.5rem;">We've sent confirmation to your email</p>
+
+            <div style="background: #1a1a1a; color: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1.5rem;">
+              <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #999; margin-bottom: 0.5rem;">
+                Your Reference Number
+              </div>
+              <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;">
+                <span id="success-ref-number" style="font-size: 1.5rem; font-weight: 700; font-family: monospace;">${submissionNumber}</span>
+                <button type="button" onclick="navigator.clipboard.writeText('${submissionNumber}').then(() => this.textContent = 'Copied!').catch(() => {})"
+                        style="background: #333; border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; text-align: center;">
+              <div>
+                <div style="font-size: 1.5rem; font-weight: 700;">${itemCount}</div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: #666;">Cards</div>
+              </div>
+              <div>
+                <div style="font-size: 1.5rem; font-weight: 700;">£${(quotedTotal / 100).toFixed(2)}</div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: #666;">Quoted Value</div>
+              </div>
+              <div>
+                <div style="font-size: 1.25rem; font-weight: 700;">${payoutType === 'STORE_CREDIT' ? 'Store Credit (+10%)' : 'Bank Transfer'}</div>
+                <div style="font-size: 0.75rem; text-transform: uppercase; color: #666;">Payout Method</div>
+              </div>
+            </div>
+
+            <div style="background: #FEF3C7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; text-align: left;">
+              <div style="font-weight: 600; color: #92400E; margin-bottom: 0.25rem;">📍 Ship Your Cards To</div>
+              <div style="color: #92400E;">See confirmation email for shipping address</div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <a href="${apiBase}/packing-slip/${submissionNumber}" target="_blank"
+                 style="display: block; background: #1a1a1a; color: white; padding: 1rem; border-radius: 8px; text-decoration: none; font-weight: 500;">
+                📄 Packing Slip - Print & include with your cards
+              </a>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <a href="${apiBase}/shipping-instructions/${submissionNumber}" target="_blank"
+                   style="display: block; background: #f5f5f5; padding: 1rem; border-radius: 8px; text-decoration: none; color: #333;">
+                  📦 Shipping Guide
+                </a>
+                <a href="${apiBase}/track?number=${submissionNumber}"
+                   style="display: block; background: #f5f5f5; padding: 1rem; border-radius: 8px; text-decoration: none; color: #333;">
+                  📍 Track Status
+                </a>
+              </div>
+              <button type="button" onclick="location.reload()"
+                      style="background: white; border: 1px solid #ddd; padding: 1rem; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                ➕ New Trade-In
+              </button>
+            </div>
+
+            <p style="margin-top: 1.5rem; color: #666; font-size: 0.875rem;">
+              📧 Check your email for confirmation with these details
+            </p>
+          </div>
+        `;
+
+        // Step 4: Replace success state content OR create it
+        if (elements.successState) {
+          elements.successState.innerHTML = successHTML;
+          console.log("[trade-in] ✓ Replaced successState content");
+        } else {
+          // Create success state element if it doesn't exist
+          const successDiv = document.createElement('div');
+          successDiv.className = 'trade-in-form__success';
+          successDiv.setAttribute('data-success-state', '');
+          successDiv.innerHTML = successHTML;
+          elements.form?.appendChild(successDiv);
+          elements.successState = successDiv;
+          console.log("[trade-in] ✓ Created new successState element");
+        }
+
+        // Step 5: Show success state
         showFormSection("success");
-        console.log("[trade-in] ✓ Showed success section");
-
-        // Step 5: Verify the DOM was updated correctly
-        setTimeout(() => {
-          const displayedNumber = document.querySelector('[data-submission-number]')?.textContent;
-          console.log("[trade-in] Verification - displayed number:", displayedNumber);
-          if (displayedNumber !== submissionNumber) {
-            console.error("[trade-in] ✗ DOM verification failed! Expected:", submissionNumber, "Got:", displayedNumber);
-          } else {
-            console.log("[trade-in] ✓ DOM verification passed");
-          }
-        }, 100);
+        console.log("[trade-in] ✓ SUCCESS PAGE DISPLAYED with number:", submissionNumber);
 
         // Clear cart
         clearCartStorage();
         state.cart = [];
-        console.log("[trade-in] ✓ Cleared cart");
 
       } catch (successError) {
         console.error("[trade-in] Error in success handling:", successError);
@@ -1212,7 +1245,6 @@
         showFormSection("form");
       }
     } else {
-      // Show error
       console.error("[trade-in] Submission failed:", result.error || result.message);
       showError(result.error || result.message || "Something went wrong. Please try again.");
       showFormSection("form");
