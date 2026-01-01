@@ -2,6 +2,7 @@ import {
   reactExtension,
   Card,
   BlockStack,
+  InlineStack,
   Text,
   Link,
 } from '@shopify/ui-extensions-react/customer-account';
@@ -15,14 +16,17 @@ export default reactExtension(
 
 function ProfileWidget() {
   return (
-    <Card title="Trade-In Program">
+    <Card padding>
       <BlockStack spacing="base">
-        <Text>
+        <InlineStack spacing="loose" blockAlignment="center">
+          <Text emphasis="bold">Trade-In</Text>
+          <Link to={TRADE_IN_URL} external>
+            Start a Trade-In
+          </Link>
+        </InlineStack>
+        <Text appearance="subdued">
           Turn your trading cards into store credit or cash. Get up to 70% of market value, plus a 10% bonus when you choose store credit.
         </Text>
-        <Link to={TRADE_IN_URL} external>
-          Start a Trade-In →
-        </Link>
       </BlockStack>
     </Card>
   );

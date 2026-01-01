@@ -24,7 +24,7 @@ function FooterCTA() {
       >
         <BlockStack spacing="none">
           <Text emphasis="bold">Have trading cards to sell?</Text>
-          <Text size="small">
+          <Text size="small" appearance="subdued">
             Get up to 70% of market value + 10% bonus with store credit
           </Text>
         </BlockStack>
