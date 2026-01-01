@@ -857,6 +857,34 @@ export default function TradeInDetail() {
             submission.status === SubmissionStatus.RECEIVED) && (
             <div className="admin-sidebar-card">
               <h3 className="admin-sidebar-card__title">Shipping</h3>
+
+              {/* Shipping Method & Status */}
+              <div className="admin-shipping__method">
+                {submission.shippingMethod === "PREPAID" ? (
+                  <span className="admin-badge admin-badge--success">
+                    Prepaid ({submission.carrier || "Royal Mail"})
+                  </span>
+                ) : (
+                  <span className="admin-badge admin-badge--info">
+                    Self-Ship
+                  </span>
+                )}
+              </div>
+
+              {/* Customer Shipping Address */}
+              {submission.shippingName && (
+                <div className="admin-shipping__address">
+                  <label className="admin-field__label">Customer Address</label>
+                  <div className="admin-address-block">
+                    <p>{submission.shippingName}</p>
+                    <p>{submission.shippingAddress1}</p>
+                    {submission.shippingAddress2 && <p>{submission.shippingAddress2}</p>}
+                    <p>{submission.shippingCity}, {submission.shippingPostalCode}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Tracking Number Form */}
               <fetcher.Form method="post" className="admin-shipping__form">
                 <input type="hidden" name="intent" value="updateTracking" />
                 <div className="admin-field">
@@ -877,6 +905,8 @@ export default function TradeInDetail() {
                   Save Tracking
                 </button>
               </fetcher.Form>
+
+              {/* Tracking Link */}
               {submission.trackingNumber && (
                 <div className="admin-shipping__link">
                   <a
@@ -888,6 +918,36 @@ export default function TradeInDetail() {
                   </a>
                 </div>
               )}
+
+              {/* Document Links */}
+              <div className="admin-shipping__documents">
+                <a
+                  href={`/apps/trade-in/packing-slip/${submission.submissionNumber}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="admin-btn admin-btn--outline admin-btn--small"
+                >
+                  View Packing Slip
+                </a>
+                <a
+                  href={`/apps/trade-in/shipping-instructions/${submission.submissionNumber}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="admin-btn admin-btn--outline admin-btn--small"
+                >
+                  Shipping Instructions
+                </a>
+                {submission.labelPdfBase64 && (
+                  <a
+                    href={`/app/trade-ins/${submission.id}/label`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="admin-btn admin-btn--outline admin-btn--small"
+                  >
+                    Download Label
+                  </a>
+                )}
+              </div>
             </div>
           )}
 

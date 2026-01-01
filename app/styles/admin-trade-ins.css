@@ -927,10 +927,34 @@
 }
 
 /* Shipping Card */
+.admin-shipping__method {
+  margin-bottom: 12px;
+}
+
+.admin-shipping__address {
+  margin-bottom: 16px;
+}
+
+.admin-address-block {
+  background: var(--ti-bg-secondary, #f9fafb);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.admin-address-block p {
+  margin: 0;
+  color: var(--ti-text);
+}
+
 .admin-shipping__form {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ti-border);
 }
 
 .admin-shipping__link {
@@ -945,6 +969,30 @@
 
 .admin-shipping__link a:hover {
   text-decoration: underline;
+}
+
+.admin-shipping__documents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ti-border);
+}
+
+.admin-btn--outline {
+  background: transparent;
+  border: 1px solid var(--ti-border);
+  color: var(--ti-text);
+}
+
+.admin-btn--outline:hover {
+  background: var(--ti-bg-secondary, #f9fafb);
+}
+
+.admin-btn--small {
+  padding: 6px 12px;
+  font-size: 13px;
 }
 
 /* Timeline */

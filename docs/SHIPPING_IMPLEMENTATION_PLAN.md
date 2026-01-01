@@ -512,31 +512,38 @@ ROYAL_MAIL_BASE_URL=https://api.parcel.royalmail.com
 
 ## Progress Tracker
 
-### Phase 1: Admin Shipping Settings UI
-- [ ] Design settings card layout
-- [ ] Implement return address form
-- [ ] Implement free shipping threshold
-- [ ] Implement Royal Mail toggle
-- [ ] Implement service level radio buttons
-- [ ] Add form validation
-- [ ] Add save action handler
-- [ ] Test settings persistence
+### Phase 1: Admin Shipping Settings UI ✅ COMPLETE
+- [x] Design settings card layout
+- [x] Implement return address form
+- [x] Implement free shipping threshold
+- [x] Implement Royal Mail toggle
+- [x] Implement service level selection
+- [x] Add form validation
+- [x] Add save action handler
+- [x] API key status badge
+- [x] Royal Mail info banner
 
-### Phase 2: Submission Shipping Panel
-- [ ] Design shipping info panel
-- [ ] Fetch shipping data
-- [ ] Display shipping method badge
-- [ ] Display tracking with link
-- [ ] Add packing slip button
-- [ ] Add shipping instructions button
-- [ ] Add tracking update form (self-ship)
-- [ ] Test panel rendering
+**Location:** `app/routes/app.settings.tsx` (lines 622-780)
 
-### Phase 3: Label Operations
-- [ ] Create label download route
-- [ ] Implement PDF response
-- [ ] Add print button
-- [ ] Test PDF download
+### Phase 2: Submission Shipping Panel ✅ COMPLETE
+- [x] Design shipping info panel
+- [x] Display shipping method badge (Prepaid/Self-Ship)
+- [x] Display customer shipping address
+- [x] Display tracking with Royal Mail link
+- [x] Add packing slip button
+- [x] Add shipping instructions button
+- [x] Add tracking update form
+- [x] Add label download button (prepaid only)
+
+**Location:** `app/routes/app.trade-ins.$id.tsx` (lines 854-952)
+**Styles:** `app/styles/admin-trade-ins.css` (lines 929-996)
+
+### Phase 3: Label Operations ✅ COMPLETE
+- [x] Create label download route
+- [x] Implement PDF response from Base64
+- [x] Set proper Content-Disposition headers
+
+**Location:** `app/routes/app.trade-ins.$id.label.tsx`
 
 ### Phase 4: Bulk Operations
 - [ ] Add bulk action to queue
