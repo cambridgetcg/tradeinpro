@@ -25,6 +25,8 @@ import {
   getSubmissionById,
   type CreateItemInput,
 } from "../lib/submissions.server";
+import { getShippingSettings, generateShippingLabel, type CustomerAddress } from "../lib/shipping.server";
+import { isValidUKPostcode, formatUKPostcode } from "../services/royalMailApi.server";
 import { sendSubmissionCreatedNotification } from "../lib/notifications.server";
 import { Condition, PayoutType, type ConditionType, type PayoutTypeValue } from "../lib/constants";
 import {
@@ -266,7 +268,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Auto-submit the submission (changes status from DRAFT to SUBMITTED)
     // This makes it visible in the admin queue immediately
-    const submittedSubmission = await submitSubmission(result.submission!.id);
+    let submittedSubmission = await submitSubmission(result.submission!.id);
 
     // Debug: Log raw submission from database
     console.log('[api.submissions] Raw submittedSubmission:', {
@@ -276,6 +278,85 @@ export async function action({ request }: ActionFunctionArgs) {
       hasSubmissionNumber: !!submittedSubmission.submissionNumber,
       type: typeof submittedSubmission.submissionNumber,
     });
+
+    // Determine shipping method and generate label if applicable
+    try {
+      const shippingSettings = await getShippingSettings();
+      const qualifiesForFreeShipping = submittedSubmission.quotedTotal >= shippingSettings.freeShippingMinimum;
+
+      // Check if customer provided a valid shipping address
+      const hasValidAddress = body.shippingAddress1 && body.shippingCity && body.shippingPostalCode &&
+        isValidUKPostcode(body.shippingPostalCode);
+
+      console.log('[api.submissions] Shipping check:', {
+        qualifiesForFreeShipping,
+        hasValidAddress,
+        royalMailEnabled: shippingSettings.royalMailEnabled,
+        quotedTotal: submittedSubmission.quotedTotal,
+        threshold: shippingSettings.freeShippingMinimum,
+      });
+
+      // If customer provided address and qualifies for free shipping, generate label
+      if (shippingSettings.royalMailEnabled && qualifiesForFreeShipping && hasValidAddress) {
+        // Build customer address for label generation
+        const customerAddress: CustomerAddress = {
+          name: `${body.firstName || ''} ${body.lastName || ''}`.trim() || 'Customer',
+          address1: sanitizeString(body.shippingAddress1, 100),
+          address2: body.shippingAddress2 ? sanitizeString(body.shippingAddress2, 100) : undefined,
+          city: sanitizeString(body.shippingCity, 50),
+          postalCode: formatUKPostcode(body.shippingPostalCode),
+          country: body.shippingCountry || 'GB',
+        };
+
+        console.log('[api.submissions] Generating shipping label for:', customerAddress);
+
+        try {
+          // Generate label via Royal Mail API
+          const labelResult = await generateShippingLabel({
+            submissionId: submittedSubmission.id,
+            customerAddress,
+          });
+
+          console.log('[api.submissions] Label generation result:', {
+            labelUrl: labelResult.labelUrl,
+            trackingNumber: labelResult.trackingNumber,
+            carrier: labelResult.carrier,
+          });
+
+          // Refresh submission to get updated shipping data
+          submittedSubmission = await prisma.tradeInSubmission.findUnique({
+            where: { id: submittedSubmission.id },
+            include: { items: true, customer: true },
+          }) || submittedSubmission;
+
+        } catch (labelError) {
+          console.error('[api.submissions] Label generation failed:', labelError);
+          // Set to ADDRESS_REQUIRED so customer can try again later
+          await prisma.tradeInSubmission.update({
+            where: { id: submittedSubmission.id },
+            data: { shippingMethod: 'LABEL_FAILED' },
+          });
+        }
+      } else {
+        // Determine shipping method without label generation
+        // - SELF_SHIP: Below threshold or Royal Mail disabled
+        // - ADDRESS_REQUIRED: Qualifies for free label but no address provided
+        const shippingMethod = qualifiesForFreeShipping && shippingSettings.royalMailEnabled
+          ? "ADDRESS_REQUIRED"
+          : "SELF_SHIP";
+
+        submittedSubmission = await prisma.tradeInSubmission.update({
+          where: { id: submittedSubmission.id },
+          data: { shippingMethod },
+          include: { items: true, customer: true },
+        });
+
+        console.log('[api.submissions] Shipping method set:', shippingMethod);
+      }
+    } catch (shippingError) {
+      // Don't fail the submission if shipping determination fails
+      console.error('[api.submissions] Failed to process shipping:', shippingError);
+    }
 
     // Build success response
     const formattedSubmission = formatSubmissionForResponse(submittedSubmission);
@@ -340,6 +421,12 @@ interface CreateSubmissionRequest {
   // Contact preferences
   phone?: string;
   contactChannel?: string;
+  // Shipping address (optional - for prepaid label generation)
+  shippingAddress1?: string;
+  shippingAddress2?: string;
+  shippingCity?: string;
+  shippingPostalCode?: string;
+  shippingCountry?: string;
 }
 
 const VALID_PAYOUT_TYPES = ["STORE_CREDIT", "BANK", "PAYPAL"];
@@ -395,6 +482,22 @@ function validateCreateSubmissionRequest(body: any): { valid: boolean; errors: s
     // Contact channel validation (required when phone is provided)
     if (!body.contactChannel || !VALID_CONTACT_CHANNELS.includes(body.contactChannel)) {
       errors.push(`Contact channel is required. Must be one of: ${VALID_CONTACT_CHANNELS.join(", ")}`);
+    }
+  }
+
+  // Shipping address validation (optional, but if any field provided, validate all required)
+  const hasAnyShippingField = body.shippingAddress1 || body.shippingCity || body.shippingPostalCode;
+  if (hasAnyShippingField) {
+    if (!body.shippingAddress1 || typeof body.shippingAddress1 !== "string" || !body.shippingAddress1.trim()) {
+      errors.push("Shipping address line 1 is required");
+    }
+    if (!body.shippingCity || typeof body.shippingCity !== "string" || !body.shippingCity.trim()) {
+      errors.push("Shipping city is required");
+    }
+    if (!body.shippingPostalCode || typeof body.shippingPostalCode !== "string" || !body.shippingPostalCode.trim()) {
+      errors.push("Shipping postcode is required");
+    } else if (!isValidUKPostcode(body.shippingPostalCode)) {
+      errors.push("Please enter a valid UK postcode");
     }
   }
 
@@ -473,5 +576,10 @@ function formatSubmissionForResponse(submission: any) {
       quotedPrice: item.quotedPrice,
     })),
     createdAt: submission.createdAt?.toISOString(),
+    // Shipping fields
+    shippingMethod: submission.shippingMethod || null,
+    trackingNumber: submission.trackingNumber || null,
+    labelUrl: submission.labelUrl || null,
+    carrier: submission.carrier || null,
   };
 }
