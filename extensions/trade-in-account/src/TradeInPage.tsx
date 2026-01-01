@@ -5,6 +5,7 @@ import {
   Card,
   Text,
   Link,
+  Button,
   InlineStack,
 } from '@shopify/ui-extensions-react/customer-account';
 
@@ -23,15 +24,15 @@ function TradeInPage() {
         <Card padding>
           <BlockStack spacing="base">
             <Text emphasis="bold" size="large">
-              Turn Your Cards Into Value
+              Turn your cards into value
             </Text>
             <Text appearance="subdued">
               Submit your trading cards for a competitive offer. Get up to 70% of market value,
               with a 10% bonus when you choose store credit.
             </Text>
-            <Link to={TRADE_IN_URL} external>
-              Start a New Trade-In →
-            </Link>
+            <Button kind="secondary" to={TRADE_IN_URL}>
+              Start a new trade-in
+            </Button>
           </BlockStack>
         </Card>
 
@@ -99,9 +100,9 @@ function TradeInPage() {
         <Card padding>
           <BlockStack spacing="base" inlineAlignment="center">
             <Text appearance="subdued">Ready to get started?</Text>
-            <Link to={TRADE_IN_URL} external>
-              Start Your Trade-In Now →
-            </Link>
+            <Button kind="secondary" to={TRADE_IN_URL}>
+              Start your trade-in now
+            </Button>
           </BlockStack>
         </Card>
       </BlockStack>
