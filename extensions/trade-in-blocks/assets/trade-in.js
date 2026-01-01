@@ -2,10 +2,16 @@
  * Trade-In Form Client Logic
  * Handles card search, browse, cart management, and form submission
  * Enhanced with card images and set filtering
+ *
+ * @version 2.1.0-20260101
+ * @updated 2026-01-01T18:45:00Z
  */
 
 (function () {
   "use strict";
+
+  // Version check - log to confirm latest code is running
+  console.log("[trade-in] Script loaded - version 2.1.0-20260101");
 
   // ============================================================================
   // Configuration
@@ -1103,46 +1109,112 @@
 
     state.isSubmitting = false;
 
+    // === OPTIMIZED SUCCESS HANDLING v2 ===
+    console.log("[trade-in] === SUBMISSION RESPONSE ===");
+    console.log("[trade-in] result:", result);
+    console.log("[trade-in] result.success:", result.success);
+    console.log("[trade-in] result.submission:", result.submission);
+
     if (result.success) {
-      // Debug: Log the full response
-      console.log("[trade-in] Full response:", JSON.stringify(result, null, 2));
-      console.log("[trade-in] result.submission:", result.submission);
-      console.log("[trade-in] result.submission?.submissionNumber:", result.submission?.submissionNumber);
+      try {
+        // Step 1: Extract submission number with multiple fallbacks
+        let submissionNumber = null;
 
-      // Get submission number - handle both normal and duplicate responses
-      const submissionNumber = result.submission?.submissionNumber;
+        if (result.submission && typeof result.submission === 'object') {
+          submissionNumber = result.submission.submissionNumber;
+          console.log("[trade-in] Extracted from result.submission.submissionNumber:", submissionNumber);
+        }
 
-      if (!submissionNumber) {
-        console.error("[trade-in] No submission number in response:", JSON.stringify(result, null, 2));
-        showError("Submission created but reference number unavailable. Please contact support.");
+        // Fallback: check if submissionNumber is at root level
+        if (!submissionNumber && result.submissionNumber) {
+          submissionNumber = result.submissionNumber;
+          console.log("[trade-in] Fallback: found at result.submissionNumber:", submissionNumber);
+        }
+
+        // Validate submission number format
+        if (!submissionNumber || typeof submissionNumber !== 'string' || !submissionNumber.startsWith('TRD-')) {
+          console.error("[trade-in] Invalid submission number:", submissionNumber);
+          console.error("[trade-in] Full result object:", JSON.stringify(result, null, 2));
+          showError("Submission created but reference number unavailable. Please contact support.");
+          showFormSection("form");
+          return;
+        }
+
+        console.log("[trade-in] ✓ Valid submissionNumber:", submissionNumber);
+
+        // Step 2: Store in localStorage as backup
+        try {
+          localStorage.setItem('tradein_last_submission', JSON.stringify({
+            submissionNumber: submissionNumber,
+            timestamp: Date.now(),
+            quotedTotal: result.submission?.quotedTotal
+          }));
+          console.log("[trade-in] ✓ Saved to localStorage");
+        } catch (storageErr) {
+          console.warn("[trade-in] localStorage save failed:", storageErr);
+        }
+
+        // Step 3: Update DOM elements with verification
+        console.log("[trade-in] Updating DOM elements...");
+        console.log("[trade-in] elements.submissionNumber:", elements.submissionNumber);
+
+        if (elements.submissionNumber) {
+          elements.submissionNumber.textContent = submissionNumber;
+          elements.submissionNumber.setAttribute('data-value', submissionNumber);
+          console.log("[trade-in] ✓ Set submissionNumber element to:", elements.submissionNumber.textContent);
+        } else {
+          console.error("[trade-in] ✗ elements.submissionNumber is null!");
+          // Try to find it manually
+          const fallbackEl = document.querySelector('[data-submission-number]');
+          if (fallbackEl) {
+            fallbackEl.textContent = submissionNumber;
+            console.log("[trade-in] ✓ Found via fallback selector, set to:", submissionNumber);
+          }
+        }
+
+        // Update links
+        const apiBase = elements.apiBase || '/apps/trade-in';
+
+        if (elements.trackingLink) {
+          elements.trackingLink.href = `${apiBase}/track?number=${submissionNumber}`;
+        }
+        if (elements.packingSlipLink) {
+          elements.packingSlipLink.href = `${apiBase}/packing-slip/${submissionNumber}`;
+        }
+        if (elements.shippingLink) {
+          elements.shippingLink.href = `${apiBase}/shipping-instructions/${submissionNumber}`;
+        }
+        console.log("[trade-in] ✓ Updated all links");
+
+        // Step 4: Show success state
+        showFormSection("success");
+        console.log("[trade-in] ✓ Showed success section");
+
+        // Step 5: Verify the DOM was updated correctly
+        setTimeout(() => {
+          const displayedNumber = document.querySelector('[data-submission-number]')?.textContent;
+          console.log("[trade-in] Verification - displayed number:", displayedNumber);
+          if (displayedNumber !== submissionNumber) {
+            console.error("[trade-in] ✗ DOM verification failed! Expected:", submissionNumber, "Got:", displayedNumber);
+          } else {
+            console.log("[trade-in] ✓ DOM verification passed");
+          }
+        }, 100);
+
+        // Clear cart
+        clearCartStorage();
+        state.cart = [];
+        console.log("[trade-in] ✓ Cleared cart");
+
+      } catch (successError) {
+        console.error("[trade-in] Error in success handling:", successError);
+        showError("Submission created but display failed. Check your email for confirmation.");
         showFormSection("form");
-        return;
       }
-
-      console.log("[trade-in] Using submissionNumber:", submissionNumber);
-
-      // Show success
-      if (elements.submissionNumber) {
-        elements.submissionNumber.textContent = submissionNumber;
-      }
-      if (elements.trackingLink) {
-        elements.trackingLink.href = `${elements.apiBase}/track?number=${submissionNumber}`;
-      }
-      if (elements.packingSlipLink) {
-        elements.packingSlipLink.href = `${elements.apiBase}/packing-slip/${submissionNumber}`;
-      }
-      if (elements.shippingLink) {
-        elements.shippingLink.href = `${elements.apiBase}/shipping-instructions/${submissionNumber}`;
-      }
-
-      showFormSection("success");
-
-      // Clear cart from storage after successful submission
-      clearCartStorage();
-      state.cart = [];
     } else {
       // Show error
-      showError(result.error || "Something went wrong. Please try again.");
+      console.error("[trade-in] Submission failed:", result.error || result.message);
+      showError(result.error || result.message || "Something went wrong. Please try again.");
       showFormSection("form");
     }
   }
@@ -1637,9 +1709,20 @@
   // ============================================================================
 
   function init() {
+    console.log("[trade-in] Initializing...");
+
     if (!initElements()) {
+      console.error("[trade-in] Form not found - aborting init");
       return; // Form not found
     }
+
+    // Debug: Log critical elements for success page
+    console.log("[trade-in] Critical elements check:");
+    console.log("  - form:", !!elements.form);
+    console.log("  - successState:", !!elements.successState);
+    console.log("  - submissionNumber:", !!elements.submissionNumber);
+    console.log("  - packingSlipLink:", !!elements.packingSlipLink);
+    console.log("  - apiBase:", elements.apiBase);
 
     setupEventHandlers();
 
@@ -1655,6 +1738,8 @@
 
     // Initialize browse mode if section exists
     initBrowse();
+
+    console.log("[trade-in] Initialization complete");
   }
 
   // Run on DOM ready
