@@ -4,8 +4,10 @@ import {
   InlineStack,
   BlockStack,
   Text,
-  Button,
+  Link,
 } from '@shopify/ui-extensions-react/customer-account';
+
+const TRADE_IN_URL = 'https://www.cambridgetcg.com/pages/trade-in';
 
 export default reactExtension(
   'customer-account.footer.render-after',
@@ -26,7 +28,7 @@ function FooterCTA() {
             Get up to 70% of market value + 10% bonus with store credit
           </Text>
         </BlockStack>
-        <Button to="/pages/trade-in">Start Trade-In</Button>
+        <Link to={TRADE_IN_URL} external>Start Trade-In →</Link>
       </InlineStack>
     </Banner>
   );

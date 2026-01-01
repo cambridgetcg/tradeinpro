@@ -1,26 +1,20 @@
 api_version = "2025-07"
 
 [[extensions]]
-name = "Trade-In History"
+name = "Trade-In Program"
 handle = "trade-in-page"
 uid = "17672b54-a802-d937-0238-df4d6f9c986fec54fcfd"
 type = "ui_extension"
-
-  [extensions.capabilities]
-  network_access = true
 
   [[extensions.targeting]]
   target = "customer-account.page.render"
   module = "./src/TradeInPage.tsx"
 
 [[extensions]]
-name = "Trade-In Stats"
+name = "Trade-In"
 handle = "trade-in-profile"
 uid = "3658be92-8c0c-5d64-69f5-4601beecc4b68587cf63"
 type = "ui_extension"
-
-  [extensions.capabilities]
-  network_access = true
 
   [[extensions.targeting]]
   target = "customer-account.profile.block.render"
