@@ -217,18 +217,26 @@ export async function action({ request }: ActionFunctionArgs) {
     // This makes it visible in the admin queue immediately
     const submittedSubmission = await submitSubmission(result.submission!.id);
 
+    // Debug: Log raw submission from database
+    console.log('[api.submissions] Raw submittedSubmission:', {
+      id: submittedSubmission.id,
+      submissionNumber: submittedSubmission.submissionNumber,
+      status: submittedSubmission.status,
+      hasSubmissionNumber: !!submittedSubmission.submissionNumber,
+      type: typeof submittedSubmission.submissionNumber,
+    });
+
     // Build success response
     const formattedSubmission = formatSubmissionForResponse(submittedSubmission);
-    console.log('[api.submissions] Response submission:', JSON.stringify({
-      id: formattedSubmission.id,
-      submissionNumber: formattedSubmission.submissionNumber,
-      status: formattedSubmission.status,
-    }));
+    console.log('[api.submissions] Formatted submission:', JSON.stringify(formattedSubmission, null, 2));
 
     const responseBody = JSON.stringify({
       success: true,
       submission: formattedSubmission,
     });
+
+    // Debug: Log the exact response body being sent
+    console.log('[api.submissions] Final response body:', responseBody);
 
     // Record for idempotency (async, non-blocking)
     recordIdempotency({
