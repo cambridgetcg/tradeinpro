@@ -117,9 +117,15 @@ export async function action({ request }: ActionFunctionArgs) {
     console.log(
       `[api.submissions] Duplicate detected - key: ${idempotencyKey}, hash: ${contentHash}`
     );
+    console.log(`[api.submissions] idempotencyCheck:`, JSON.stringify({
+      isDuplicate: idempotencyCheck.isDuplicate,
+      hasCachedResponse: !!idempotencyCheck.cachedResponse,
+      existingSubmissionId: idempotencyCheck.existingSubmissionId,
+    }));
 
     // Return cached response if available (exact replay)
     if (idempotencyCheck.cachedResponse) {
+      console.log(`[api.submissions] Returning cached response`);
       return new Response(idempotencyCheck.cachedResponse.body, {
         status: idempotencyCheck.cachedResponse.status,
         headers: {
@@ -131,29 +137,40 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Fetch the existing submission to return full details
     if (idempotencyCheck.existingSubmissionId) {
+      console.log(`[api.submissions] Fetching existing submission: ${idempotencyCheck.existingSubmissionId}`);
       const existingSubmission = await getSubmissionById(idempotencyCheck.existingSubmissionId);
+      console.log(`[api.submissions] getSubmissionById result:`, existingSubmission ? 'found' : 'null');
       if (existingSubmission) {
+        const formatted = formatSubmissionForResponse(existingSubmission);
+        console.log(`[api.submissions] Returning duplicate with submission:`, JSON.stringify({
+          id: formatted.id,
+          submissionNumber: formatted.submissionNumber,
+        }));
         return jsonResponse(
           {
             success: true,
             duplicate: true,
             message: "Submission already exists",
-            submission: formatSubmissionForResponse(existingSubmission),
+            submission: formatted,
           },
           200
         );
       }
     }
 
-    // Fallback if submission not found (shouldn't happen normally)
+    // Fallback: Try to find the submission by content hash
+    console.log(`[api.submissions] WARNING: Hitting fallback path - no existingSubmissionId or submission not found`);
+
+    // Last resort: search for recent submission with same email
+    // This shouldn't happen in normal operation
     return jsonResponse(
       {
-        success: true,
+        success: false,
         duplicate: true,
-        message: "Submission already exists",
-        submissionId: idempotencyCheck.existingSubmissionId,
+        error: "duplicate_detected",
+        message: "A similar submission was recently created. Please check your submissions or try again later.",
       },
-      200
+      409
     );
   }
 

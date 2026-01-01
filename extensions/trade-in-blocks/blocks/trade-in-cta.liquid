@@ -1,33 +1,103 @@
 {% comment %}
   Trade-In CTA Block
   Call-to-action button with key features
+
+  Priority order for settings:
+  1. Theme editor block settings (if provided)
+  2. Shop metafields (set via CardForum app)
+  3. Default translations/values
 {% endcomment %}
 
+{% comment %} Read metafields with defaults {% endcomment %}
+{% assign mf_title = shop.metafields.cardforum.cta_title %}
+{% assign mf_description = shop.metafields.cardforum.cta_description %}
+{% assign mf_button_text = shop.metafields.cardforum.cta_button_text %}
+{% assign mf_button_link = shop.metafields.cardforum.cta_button_link %}
+{% assign mf_show_features = shop.metafields.cardforum.cta_show_features %}
+{% assign mf_feature_1 = shop.metafields.cardforum.cta_feature_1 %}
+{% assign mf_feature_2 = shop.metafields.cardforum.cta_feature_2 %}
+{% assign mf_feature_3 = shop.metafields.cardforum.cta_feature_3 %}
+
+{% comment %} Parse feature strings (format: "Title|Description") {% endcomment %}
+{% if mf_feature_1 != blank %}
+  {% assign f1_parts = mf_feature_1 | split: '|' %}
+  {% assign f1_title = f1_parts[0] %}
+  {% assign f1_desc = f1_parts[1] %}
+{% endif %}
+
+{% if mf_feature_2 != blank %}
+  {% assign f2_parts = mf_feature_2 | split: '|' %}
+  {% assign f2_title = f2_parts[0] %}
+  {% assign f2_desc = f2_parts[1] %}
+{% endif %}
+
+{% if mf_feature_3 != blank %}
+  {% assign f3_parts = mf_feature_3 | split: '|' %}
+  {% assign f3_title = f3_parts[0] %}
+  {% assign f3_desc = f3_parts[1] %}
+{% endif %}
+
+{% comment %} Resolve final values: block settings -> metafield -> default {% endcomment %}
+{% if block.settings.title != blank %}
+  {% assign cta_title = block.settings.title %}
+{% elsif mf_title != blank %}
+  {% assign cta_title = mf_title %}
+{% else %}
+  {% assign cta_title = 'Trade In Your Cards' %}
+{% endif %}
+
+{% if block.settings.description != blank %}
+  {% assign cta_description = block.settings.description %}
+{% elsif mf_description != blank %}
+  {% assign cta_description = mf_description %}
+{% else %}
+  {% assign cta_description = 'Turn your trading cards into cash or store credit' %}
+{% endif %}
+
+{% if block.settings.button_text != blank %}
+  {% assign cta_button_text = block.settings.button_text %}
+{% elsif mf_button_text != blank %}
+  {% assign cta_button_text = mf_button_text %}
+{% else %}
+  {% assign cta_button_text = 'Start Trade-In' %}
+{% endif %}
+
+{% if block.settings.link != blank %}
+  {% assign cta_link = block.settings.link %}
+{% elsif mf_button_link != blank %}
+  {% assign cta_link = mf_button_link %}
+{% else %}
+  {% assign cta_link = '/pages/trade-in' %}
+{% endif %}
+
+{% comment %} Determine if features should show {% endcomment %}
+{% if block.settings.show_features == false %}
+  {% assign show_features = false %}
+{% elsif mf_show_features == 'false' or mf_show_features == false %}
+  {% assign show_features = false %}
+{% else %}
+  {% assign show_features = true %}
+{% endif %}
+
 <div class="trade-in-cta">
-  <h2 class="trade-in-cta__title">
-    {{ block.settings.title | default: 'trade_in.cta.title' | t }}
-  </h2>
-  <p class="trade-in-cta__description">
-    {{ block.settings.description | default: 'trade_in.cta.description' | t }}
-  </p>
+  <h2 class="trade-in-cta__title">{{ cta_title }}</h2>
+  <p class="trade-in-cta__description">{{ cta_description }}</p>
 
-  <a href="{{ block.settings.link | default: pages['trade-in'].url | default: '/pages/trade-in' }}" class="trade-in-cta__button">
-    {{ block.settings.button_text | default: 'trade_in.cta.button' | t }}
-  </a>
+  <a href="{{ cta_link }}" class="trade-in-cta__button">{{ cta_button_text }}</a>
 
-  {% if block.settings.show_features %}
+  {% if show_features %}
     <div class="trade-in-cta__features">
       <div class="trade-in-cta__feature">
-        <span class="trade-in-cta__feature-title">{{ 'trade_in.cta.features.fast' | t }}</span>
-        <span class="trade-in-cta__feature-desc">{{ 'trade_in.cta.features.fast_desc' | t }}</span>
+        <span class="trade-in-cta__feature-title">{{ f1_title | default: 'Fast Payouts' }}</span>
+        <span class="trade-in-cta__feature-desc">{{ f1_desc | default: 'Get paid within 48 hours' }}</span>
       </div>
       <div class="trade-in-cta__feature">
-        <span class="trade-in-cta__feature-title">{{ 'trade_in.cta.features.bonus' | t }}</span>
-        <span class="trade-in-cta__feature-desc">{{ 'trade_in.cta.features.bonus_desc' | t }}</span>
+        <span class="trade-in-cta__feature-title">{{ f2_title | default: '10% Bonus' }}</span>
+        <span class="trade-in-cta__feature-desc">{{ f2_desc | default: 'Extra 10% for store credit' }}</span>
       </div>
       <div class="trade-in-cta__feature">
-        <span class="trade-in-cta__feature-title">{{ 'trade_in.cta.features.free_ship' | t }}</span>
-        <span class="trade-in-cta__feature-desc">{{ 'trade_in.cta.features.free_ship_desc' | t }}</span>
+        <span class="trade-in-cta__feature-title">{{ f3_title | default: 'Free Shipping' }}</span>
+        <span class="trade-in-cta__feature-desc">{{ f3_desc | default: 'On orders over £50' }}</span>
       </div>
     </div>
   {% endif %}
@@ -43,33 +113,39 @@
   },
   "settings": [
     {
+      "type": "paragraph",
+      "content": "Content can be edited in the CardForum app Settings page. Values here will override app settings."
+    },
+    {
       "type": "text",
       "id": "title",
-      "label": "Title",
-      "default": "Trade In Your Cards"
+      "label": "Title (override)",
+      "info": "Leave blank to use app settings"
     },
     {
       "type": "text",
       "id": "description",
-      "label": "Description",
-      "default": "Turn your trading cards into cash or store credit"
+      "label": "Description (override)",
+      "info": "Leave blank to use app settings"
     },
     {
       "type": "text",
       "id": "button_text",
-      "label": "Button Text",
-      "default": "Start Trade-In"
+      "label": "Button Text (override)",
+      "info": "Leave blank to use app settings"
     },
     {
       "type": "url",
       "id": "link",
-      "label": "Button Link"
+      "label": "Button Link (override)",
+      "info": "Leave blank to use app settings"
     },
     {
       "type": "checkbox",
       "id": "show_features",
       "label": "Show Features",
-      "default": true
+      "default": true,
+      "info": "Uncheck to hide feature highlights"
     }
   ]
 }

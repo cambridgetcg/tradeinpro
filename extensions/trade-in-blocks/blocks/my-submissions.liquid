@@ -1,57 +1,68 @@
 {% comment %}
   My Submissions Block
   Shows customer's trade-in history when logged in
+  Styled to match Sleek theme design system
 {% endcomment %}
 
-<div class="trade-in-account" data-my-submissions data-api-base="/apps/trade-in">
+{{ 'trade-in-account.css' | asset_url | stylesheet_tag }}
+
+<div
+  class="trade-in-account section--padding"
+  data-my-submissions
+  data-api-base="/apps/trade-in"
+  style="--section-padding-top: {{ block.settings.padding_top | default: 60 }}px; --section-padding-bottom: {{ block.settings.padding_bottom | default: 60 }}px;"
+>
   {% if customer %}
     {%- comment -%} Logged-in customer view {%- endcomment -%}
     <input type="hidden" data-customer-id value="{{ customer.id }}">
 
     <div class="trade-in-account__header">
       <div class="trade-in-account__header-content">
-        <h2 class="trade-in-account__title">{{ block.settings.title | default: 'trade_in.account.title' | t }}</h2>
-        <p class="trade-in-account__subtitle">{{ 'trade_in.account.subtitle' | t }}</p>
+        <p class="trade-in-account__subheading text-subheading">{{ block.settings.subheading | default: 'Account' }}</p>
+        <h2 class="trade-in-account__title h2">{{ block.settings.title | default: 'My Trade-Ins' }}</h2>
+        <p class="trade-in-account__subtitle">{{ block.settings.description | default: 'View and manage your trade-in submissions' }}</p>
       </div>
       {% assign trade_in_url = block.settings.trade_in_page | default: '/pages/trade-in' %}
-      <a href="{{ trade_in_url }}" class="trade-in-btn trade-in-btn--primary">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-          <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-        </svg>
-        {{ 'trade_in.account.new_trade_in' | t }}
+      <a href="{{ trade_in_url }}" class="button button--primary">
+        <span class="btn-text">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
+          </svg>
+          {{ 'trade_in.account.new_trade_in' | t | default: 'New Trade-In' }}
+        </span>
       </a>
     </div>
 
     {%- comment -%} Stats Cards {%- endcomment -%}
     <div class="trade-in-account__stats" data-account-stats>
-      <div class="trade-in-stat-card">
-        <span class="trade-in-stat-card__value" data-stat-total>-</span>
-        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.total' | t }}</span>
+      <div class="trade-in-stat-card blocks-radius">
+        <span class="trade-in-stat-card__value h3" data-stat-total>-</span>
+        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.total' | t | default: 'Total Submissions' }}</span>
       </div>
-      <div class="trade-in-stat-card">
-        <span class="trade-in-stat-card__value" data-stat-pending>-</span>
-        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.pending' | t }}</span>
+      <div class="trade-in-stat-card blocks-radius">
+        <span class="trade-in-stat-card__value h3" data-stat-pending>-</span>
+        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.pending' | t | default: 'Pending' }}</span>
       </div>
-      <div class="trade-in-stat-card">
-        <span class="trade-in-stat-card__value" data-stat-completed>-</span>
-        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.completed' | t }}</span>
+      <div class="trade-in-stat-card blocks-radius">
+        <span class="trade-in-stat-card__value h3" data-stat-completed>-</span>
+        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.completed' | t | default: 'Completed' }}</span>
       </div>
-      <div class="trade-in-stat-card trade-in-stat-card--highlight">
-        <span class="trade-in-stat-card__value" data-stat-earned>-</span>
-        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.earned' | t }}</span>
+      <div class="trade-in-stat-card trade-in-stat-card--highlight blocks-radius">
+        <span class="trade-in-stat-card__value h3" data-stat-earned>-</span>
+        <span class="trade-in-stat-card__label">{{ 'trade_in.account.stats.earned' | t | default: 'Total Earned' }}</span>
       </div>
     </div>
 
     {%- comment -%} Filter Tabs {%- endcomment -%}
     <div class="trade-in-account__filters">
       <button type="button" class="trade-in-filter-tab trade-in-filter-tab--active" data-filter="all">
-        {{ 'trade_in.account.filter.all' | t }}
+        {{ 'trade_in.account.filter.all' | t | default: 'All' }}
       </button>
       <button type="button" class="trade-in-filter-tab" data-filter="pending">
-        {{ 'trade_in.account.filter.pending' | t }}
+        {{ 'trade_in.account.filter.pending' | t | default: 'In Progress' }}
       </button>
       <button type="button" class="trade-in-filter-tab" data-filter="completed">
-        {{ 'trade_in.account.filter.completed' | t }}
+        {{ 'trade_in.account.filter.completed' | t | default: 'Completed' }}
       </button>
     </div>
 
@@ -59,26 +70,26 @@
     <div class="trade-in-account__list" data-submissions-list>
       <div class="trade-in-account__loading" data-loading-state>
         <div class="trade-in-spinner"></div>
-        <p>{{ 'trade_in.account.loading' | t }}</p>
+        <p>{{ 'trade_in.account.loading' | t | default: 'Loading your submissions...' }}</p>
       </div>
     </div>
 
     {%- comment -%} Empty State {%- endcomment -%}
-    <div class="trade-in-account__empty" data-empty-state hidden>
+    <div class="trade-in-account__empty blocks-radius" data-empty-state hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="trade-in-account__empty-icon">
         <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
       </svg>
-      <h3>{{ 'trade_in.account.empty.title' | t }}</h3>
-      <p>{{ 'trade_in.account.empty.message' | t }}</p>
-      <a href="{{ trade_in_url }}" class="trade-in-btn trade-in-btn--primary">
-        {{ 'trade_in.account.empty.cta' | t }}
+      <h3 class="h4">{{ 'trade_in.account.empty.title' | t | default: 'No submissions yet' }}</h3>
+      <p>{{ 'trade_in.account.empty.message' | t | default: 'Start trading in your cards to see them here.' }}</p>
+      <a href="{{ trade_in_url }}" class="button button--primary">
+        <span class="btn-text">{{ 'trade_in.account.empty.cta' | t | default: 'Start Your First Trade-In' }}</span>
       </a>
     </div>
 
     {%- comment -%} Pagination {%- endcomment -%}
     <div class="trade-in-account__pagination" data-pagination hidden>
-      <button type="button" class="trade-in-btn trade-in-btn--secondary" data-load-more>
-        {{ 'trade_in.account.load_more' | t }}
+      <button type="button" class="button button--secondary" data-load-more>
+        <span class="btn-text">{{ 'trade_in.account.load_more' | t | default: 'Load More' }}</span>
       </button>
     </div>
 
@@ -86,7 +97,7 @@
     <div class="trade-in-detail-modal" data-detail-modal hidden>
       <div class="trade-in-detail-modal__backdrop" data-modal-backdrop></div>
       <div class="trade-in-detail-modal__container">
-        <div class="trade-in-detail-modal__content" data-modal-content>
+        <div class="trade-in-detail-modal__content blocks-radius" data-modal-content>
           {%- comment -%} Content populated by JS {%- endcomment -%}
         </div>
       </div>
@@ -95,24 +106,25 @@
   {% else %}
     {%- comment -%} Guest view - prompt to login {%- endcomment -%}
     <div class="trade-in-account trade-in-account--guest">
-      <div class="trade-in-account__guest-content">
+      <div class="trade-in-account__guest-content blocks-radius">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="trade-in-account__guest-icon">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
         </svg>
-        <h2 class="trade-in-account__title">{{ block.settings.title | default: 'trade_in.account.title' | t }}</h2>
-        <p class="trade-in-account__guest-message">{{ 'trade_in.account.guest.message' | t }}</p>
+        <p class="trade-in-account__subheading text-subheading">{{ block.settings.subheading | default: 'Account' }}</p>
+        <h2 class="trade-in-account__title h2">{{ block.settings.title | default: 'My Trade-Ins' }}</h2>
+        <p class="trade-in-account__guest-message">{{ 'trade_in.account.guest.message' | t | default: 'Sign in to view your trade-in history and manage submissions.' }}</p>
         <div class="trade-in-account__guest-actions">
-          <a href="/account/login?return_url={{ request.path | url_encode }}" class="trade-in-btn trade-in-btn--primary">
-            {{ 'trade_in.account.guest.login' | t }}
+          <a href="/account/login?return_url={{ request.path | url_encode }}" class="button button--primary">
+            <span class="btn-text">{{ 'trade_in.account.guest.login' | t | default: 'Sign In' }}</span>
           </a>
-          <a href="/account/register" class="trade-in-btn trade-in-btn--secondary">
-            {{ 'trade_in.account.guest.register' | t }}
+          <a href="/account/register" class="button button--secondary">
+            <span class="btn-text">{{ 'trade_in.account.guest.register' | t | default: 'Create Account' }}</span>
           </a>
         </div>
         <p class="trade-in-account__guest-track">
-          {{ 'trade_in.account.guest.track_prompt' | t }}
-          <a href="{{ block.settings.track_page | default: '/pages/track-trade-in' }}">
-            {{ 'trade_in.account.guest.track_link' | t }}
+          {{ 'trade_in.account.guest.track_prompt' | t | default: 'Already submitted? ' }}
+          <a href="{{ block.settings.track_page | default: '/pages/track-trade-in' }}" class="link--underline">
+            {{ 'trade_in.account.guest.track_link' | t | default: 'Track your submission' }}
           </a>
         </p>
       </div>
@@ -126,16 +138,28 @@
 {
   "name": "My Trade-Ins",
   "target": "section",
-  "stylesheet": "trade-in.css",
+  "stylesheet": "trade-in-account.css",
   "enabled_on": {
     "templates": ["customers/account", "page", "index"]
   },
   "settings": [
     {
       "type": "text",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "Account"
+    },
+    {
+      "type": "text",
       "id": "title",
       "label": "Title",
       "default": "My Trade-Ins"
+    },
+    {
+      "type": "text",
+      "id": "description",
+      "label": "Description",
+      "default": "View and manage your trade-in submissions"
     },
     {
       "type": "url",
@@ -146,6 +170,26 @@
       "type": "url",
       "id": "track_page",
       "label": "Track Page URL"
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Section padding top",
+      "default": 60
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Section padding bottom",
+      "default": 60
     }
   ]
 }

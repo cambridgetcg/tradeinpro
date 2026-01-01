@@ -35,6 +35,12 @@ import {
   type ReturnAddress,
   type TradeInSettingsInput,
 } from "../lib/settings.server";
+import {
+  getCTASettings,
+  saveCTASettingsAndSync,
+  DEFAULT_CTA_SETTINGS,
+  type CTASettings,
+} from "../lib/cta-settings.server";
 import { formatPrice } from "../lib/constants";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -44,6 +50,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { session } = await authenticate.admin(request);
     console.log("[app.settings loader] Auth OK, shop:", session?.shop);
     const settings = await getOrCreateSettings(session.shop);
+    const ctaSettings = await getCTASettings(session.shop);
     console.log("[app.settings loader] Settings loaded, id:", settings?.id);
 
     return {
@@ -51,6 +58,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         ...settings,
         returnAddress: parseReturnAddress(settings.returnAddress),
       },
+      ctaSettings,
       royalMailConfigured: !!process.env.ROYAL_MAIL_API_KEY,
     };
   } catch (error) {
@@ -63,6 +71,37 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
+
+  if (intent === "saveCTASettings") {
+    const { admin } = await authenticate.admin(request);
+    const { saveCTASettingsAndSync } = await import("../lib/cta-settings.server");
+
+    const ctaInput = {
+      ctaTitle: (formData.get("ctaTitle") as string) || null,
+      ctaDescription: (formData.get("ctaDescription") as string) || null,
+      ctaButtonText: (formData.get("ctaButtonText") as string) || null,
+      ctaButtonLink: (formData.get("ctaButtonLink") as string) || null,
+      ctaShowFeatures: formData.get("ctaShowFeatures") === "true",
+      ctaFeature1Title: (formData.get("ctaFeature1Title") as string) || null,
+      ctaFeature1Desc: (formData.get("ctaFeature1Desc") as string) || null,
+      ctaFeature2Title: (formData.get("ctaFeature2Title") as string) || null,
+      ctaFeature2Desc: (formData.get("ctaFeature2Desc") as string) || null,
+      ctaFeature3Title: (formData.get("ctaFeature3Title") as string) || null,
+      ctaFeature3Desc: (formData.get("ctaFeature3Desc") as string) || null,
+    };
+
+    const result = await saveCTASettingsAndSync(session.shop, admin, ctaInput);
+
+    if (!result.syncSuccess) {
+      return {
+        success: true,
+        message: "CTA settings saved locally, but sync to theme failed",
+        warnings: result.syncErrors
+      };
+    }
+
+    return { success: true, message: "CTA settings saved and synced to theme" };
+  }
 
   if (intent === "saveSettings") {
     const input: TradeInSettingsInput = {
@@ -126,7 +165,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { settings, royalMailConfigured } = useLoaderData<typeof loader>();
+  const { settings, ctaSettings, royalMailConfigured } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -170,6 +209,21 @@ export default function Settings() {
   const [editingAddress, setEditingAddress] = useState<ReturnAddress | null>(
     formState.returnAddress
   );
+
+  // CTA form state
+  const [ctaState, setCtaState] = useState({
+    ctaTitle: ctaSettings.ctaTitle || "",
+    ctaDescription: ctaSettings.ctaDescription || "",
+    ctaButtonText: ctaSettings.ctaButtonText || "",
+    ctaButtonLink: ctaSettings.ctaButtonLink || "",
+    ctaShowFeatures: ctaSettings.ctaShowFeatures,
+    ctaFeature1Title: ctaSettings.ctaFeature1Title || "",
+    ctaFeature1Desc: ctaSettings.ctaFeature1Desc || "",
+    ctaFeature2Title: ctaSettings.ctaFeature2Title || "",
+    ctaFeature2Desc: ctaSettings.ctaFeature2Desc || "",
+    ctaFeature3Title: ctaSettings.ctaFeature3Title || "",
+    ctaFeature3Desc: ctaSettings.ctaFeature3Desc || "",
+  });
 
   const handleSave = () => {
     const formData = new FormData();
@@ -226,6 +280,23 @@ export default function Settings() {
       setFormState({ ...formState, returnAddress: editingAddress });
     }
     setAddressModalOpen(false);
+  };
+
+  const handleSaveCTA = () => {
+    const formData = new FormData();
+    formData.set("intent", "saveCTASettings");
+    formData.set("ctaTitle", ctaState.ctaTitle);
+    formData.set("ctaDescription", ctaState.ctaDescription);
+    formData.set("ctaButtonText", ctaState.ctaButtonText);
+    formData.set("ctaButtonLink", ctaState.ctaButtonLink);
+    formData.set("ctaShowFeatures", ctaState.ctaShowFeatures.toString());
+    formData.set("ctaFeature1Title", ctaState.ctaFeature1Title);
+    formData.set("ctaFeature1Desc", ctaState.ctaFeature1Desc);
+    formData.set("ctaFeature2Title", ctaState.ctaFeature2Title);
+    formData.set("ctaFeature2Desc", ctaState.ctaFeature2Desc);
+    formData.set("ctaFeature3Title", ctaState.ctaFeature3Title);
+    formData.set("ctaFeature3Desc", ctaState.ctaFeature3Desc);
+    submit(formData, { method: "post" });
   };
 
   const errors = actionData && !actionData.success ? actionData.errors || {} : {};
@@ -747,6 +818,132 @@ export default function Settings() {
                   helpText="Send email to customer with grading results"
                 />
               </FormLayout>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        {/* CTA Block Settings */}
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <BlockStack gap="100">
+                  <Text as="h2" variant="headingMd">
+                    Trade-In CTA Block
+                  </Text>
+                  <Text as="p" tone="subdued">
+                    Customize the promotional banner shown on your storefront
+                  </Text>
+                </BlockStack>
+                <Button onClick={handleSaveCTA} loading={isSubmitting}>
+                  Save CTA
+                </Button>
+              </InlineStack>
+
+              <Divider />
+
+              <FormLayout>
+                <TextField
+                  label="Title"
+                  value={ctaState.ctaTitle}
+                  onChange={(value) => setCtaState({ ...ctaState, ctaTitle: value })}
+                  placeholder="Trade In Your Cards"
+                  helpText="Main headline for the CTA block"
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Description"
+                  value={ctaState.ctaDescription}
+                  onChange={(value) => setCtaState({ ...ctaState, ctaDescription: value })}
+                  placeholder="Turn your trading cards into cash or store credit"
+                  helpText="Supporting text below the title"
+                  autoComplete="off"
+                />
+                <FormLayout.Group>
+                  <TextField
+                    label="Button Text"
+                    value={ctaState.ctaButtonText}
+                    onChange={(value) => setCtaState({ ...ctaState, ctaButtonText: value })}
+                    placeholder="Start Trade-In"
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label="Button Link"
+                    value={ctaState.ctaButtonLink}
+                    onChange={(value) => setCtaState({ ...ctaState, ctaButtonLink: value })}
+                    placeholder="/pages/trade-in"
+                    helpText="URL to your trade-in page"
+                    autoComplete="off"
+                  />
+                </FormLayout.Group>
+              </FormLayout>
+
+              <Divider />
+
+              <Checkbox
+                label="Show feature highlights"
+                checked={ctaState.ctaShowFeatures}
+                onChange={(checked) => setCtaState({ ...ctaState, ctaShowFeatures: checked })}
+                helpText="Display 3 feature highlights below the CTA button"
+              />
+
+              {ctaState.ctaShowFeatures && (
+                <BlockStack gap="400">
+                  <Text as="h3" variant="headingSm">
+                    Feature Highlights
+                  </Text>
+                  <InlineGrid columns={3} gap="400">
+                    <BlockStack gap="200">
+                      <TextField
+                        label="Feature 1 Title"
+                        value={ctaState.ctaFeature1Title}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature1Title: value })}
+                        placeholder="Fast Payouts"
+                        autoComplete="off"
+                      />
+                      <TextField
+                        label="Feature 1 Description"
+                        value={ctaState.ctaFeature1Desc}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature1Desc: value })}
+                        placeholder="Get paid within 48 hours"
+                        autoComplete="off"
+                      />
+                    </BlockStack>
+                    <BlockStack gap="200">
+                      <TextField
+                        label="Feature 2 Title"
+                        value={ctaState.ctaFeature2Title}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature2Title: value })}
+                        placeholder="10% Bonus"
+                        autoComplete="off"
+                      />
+                      <TextField
+                        label="Feature 2 Description"
+                        value={ctaState.ctaFeature2Desc}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature2Desc: value })}
+                        placeholder="Extra 10% for store credit"
+                        autoComplete="off"
+                      />
+                    </BlockStack>
+                    <BlockStack gap="200">
+                      <TextField
+                        label="Feature 3 Title"
+                        value={ctaState.ctaFeature3Title}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature3Title: value })}
+                        placeholder="Free Shipping"
+                        autoComplete="off"
+                      />
+                      <TextField
+                        label="Feature 3 Description"
+                        value={ctaState.ctaFeature3Desc}
+                        onChange={(value) => setCtaState({ ...ctaState, ctaFeature3Desc: value })}
+                        placeholder="On orders over £50"
+                        autoComplete="off"
+                      />
+                    </BlockStack>
+                  </InlineGrid>
+                </BlockStack>
+              )}
             </BlockStack>
           </Card>
         </Layout.Section>
