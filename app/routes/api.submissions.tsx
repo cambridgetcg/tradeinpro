@@ -218,9 +218,16 @@ export async function action({ request }: ActionFunctionArgs) {
     const submittedSubmission = await submitSubmission(result.submission!.id);
 
     // Build success response
+    const formattedSubmission = formatSubmissionForResponse(submittedSubmission);
+    console.log('[api.submissions] Response submission:', JSON.stringify({
+      id: formattedSubmission.id,
+      submissionNumber: formattedSubmission.submissionNumber,
+      status: formattedSubmission.status,
+    }));
+
     const responseBody = JSON.stringify({
       success: true,
-      submission: formatSubmissionForResponse(submittedSubmission),
+      submission: formattedSubmission,
     });
 
     // Record for idempotency (async, non-blocking)

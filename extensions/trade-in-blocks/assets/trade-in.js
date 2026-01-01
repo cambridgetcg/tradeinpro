@@ -238,6 +238,10 @@
 
       const result = await response.json();
 
+      // Debug: Log raw API response
+      console.log("[trade-in] API response status:", response.status);
+      console.log("[trade-in] API response body:", JSON.stringify(result, null, 2));
+
       // Check if this was a duplicate request (idempotent replay)
       if (response.headers.get("X-Idempotent-Replay") === "true") {
         console.log("[trade-in] Idempotent replay detected - returning cached response");
@@ -246,6 +250,7 @@
       // Handle duplicate detection
       if (result.duplicate) {
         console.log("[trade-in] Duplicate submission detected:", result.submissionId);
+        console.log("[trade-in] Duplicate has submission object:", !!result.submission);
         // Still treat as success - the submission exists
         return result;
       }
@@ -1099,15 +1104,22 @@
     state.isSubmitting = false;
 
     if (result.success) {
+      // Debug: Log the full response
+      console.log("[trade-in] Full response:", JSON.stringify(result, null, 2));
+      console.log("[trade-in] result.submission:", result.submission);
+      console.log("[trade-in] result.submission?.submissionNumber:", result.submission?.submissionNumber);
+
       // Get submission number - handle both normal and duplicate responses
       const submissionNumber = result.submission?.submissionNumber;
 
       if (!submissionNumber) {
-        console.error("[trade-in] No submission number in response:", result);
+        console.error("[trade-in] No submission number in response:", JSON.stringify(result, null, 2));
         showError("Submission created but reference number unavailable. Please contact support.");
         showFormSection("form");
         return;
       }
+
+      console.log("[trade-in] Using submissionNumber:", submissionNumber);
 
       // Show success
       if (elements.submissionNumber) {
