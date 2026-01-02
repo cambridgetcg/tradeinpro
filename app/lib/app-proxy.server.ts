@@ -9,6 +9,7 @@
 
 import crypto from "crypto";
 import prisma from "../db.server";
+import { unauthenticated } from "../shopify.server";
 
 // ============================================================================
 // Types
@@ -427,28 +428,67 @@ export async function requireCustomer(
   let customer = await findCustomerByShopifyId(shopifyCustomerId);
 
   if (!customer) {
-    // Auto-create customer record for first-time visitors
-    // They can update their email when they submit their first trade-in
-    try {
-      customer = await prisma.customer.create({
-        data: {
-          shopifyCustomerId: shopifyCustomerId,
-          email: `shopify-${shopifyCustomerId}@pending.local`, // Placeholder until they submit
-        },
+    // Customer not found by Shopify ID - they may have submitted as a guest before
+    // Try to find and link by email
+    console.log(`[requireCustomer] Customer not found by Shopify ID ${shopifyCustomerId}, attempting to link by email`);
+
+    // Step 1: Check if email was provided via header (for backwards compatibility)
+    let customerEmail = request.headers.get("X-Customer-Email")?.toLowerCase().trim();
+
+    // Step 2: If no header, fetch email from Shopify Admin API
+    if (!customerEmail || !customerEmail.includes("@") || customerEmail.endsWith("@pending.local")) {
+      console.log("[requireCustomer] No email header, fetching from Shopify API...");
+      customerEmail = await getShopifyCustomerEmail(shop, shopifyCustomerId) || undefined;
+    }
+
+    if (customerEmail && customerEmail.includes("@") && !customerEmail.endsWith("@pending.local")) {
+      // Try to find existing customer by email (may have submitted as guest)
+      const existingByEmail = await prisma.customer.findFirst({
+        where: { email: customerEmail },
       });
-      console.log(`Auto-created customer record for Shopify ID: ${shopifyCustomerId} (via ${authMethod})`);
-    } catch (error) {
-      // Handle race condition - another request might have created it
-      customer = await findCustomerByShopifyId(shopifyCustomerId);
-      if (!customer) {
-        console.error("Failed to create customer record:", error);
-        throw new Response(
-          JSON.stringify({ error: "customer_creation_failed", message: "Unable to create customer record" }),
-          {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
+
+      if (existingByEmail && !existingByEmail.shopifyCustomerId) {
+        // MERGE: Update existing customer with Shopify ID - this links guest submissions!
+        customer = await prisma.customer.update({
+          where: { id: existingByEmail.id },
+          data: { shopifyCustomerId },
+        });
+        console.log(`[requireCustomer] ✓ Linked guest customer ${existingByEmail.id} (${customerEmail}) with Shopify ID ${shopifyCustomerId}`);
+      } else if (existingByEmail && existingByEmail.shopifyCustomerId === shopifyCustomerId) {
+        // Already linked (shouldn't happen, but handle gracefully)
+        customer = existingByEmail;
+        console.log(`[requireCustomer] Customer ${customerEmail} already linked to Shopify ID ${shopifyCustomerId}`);
+      } else if (existingByEmail) {
+        // Customer exists but has different Shopify ID - edge case
+        // This could happen if same email is used by different Shopify accounts
+        console.warn(`[requireCustomer] Customer ${customerEmail} exists with different Shopify ID (${existingByEmail.shopifyCustomerId}), creating new record`);
+        // Don't use this customer - fall through to create new one
+      }
+    }
+
+    // Still no customer? Create new one
+    if (!customer) {
+      try {
+        customer = await prisma.customer.create({
+          data: {
+            shopifyCustomerId: shopifyCustomerId,
+            email: customerEmail || `shopify-${shopifyCustomerId}@pending.local`, // Use real email if available
+          },
+        });
+        console.log(`[requireCustomer] Created new customer record for Shopify ID: ${shopifyCustomerId}, email: ${customerEmail || 'pending'}`);
+      } catch (error) {
+        // Handle race condition - another request might have created it
+        customer = await findCustomerByShopifyId(shopifyCustomerId);
+        if (!customer) {
+          console.error("Failed to create customer record:", error);
+          throw new Response(
+            JSON.stringify({ error: "customer_creation_failed", message: "Unable to create customer record" }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
       }
     }
   }
@@ -480,6 +520,68 @@ export async function findCustomerByEmail(email: string) {
   return prisma.customer.findFirst({
     where: { email: email.toLowerCase() },
   });
+}
+
+// ============================================================================
+// Shopify Admin API Helpers
+// ============================================================================
+
+const GET_CUSTOMER_EMAIL_QUERY = `#graphql
+  query getCustomerEmail($id: ID!) {
+    customer(id: $id) {
+      id
+      email
+    }
+  }
+`;
+
+/**
+ * Fetch customer email from Shopify Admin API
+ * Uses offline access token stored in session
+ *
+ * @param shop - Shopify shop domain
+ * @param shopifyCustomerId - Numeric Shopify customer ID
+ * @returns Customer email or null if not found
+ */
+export async function getShopifyCustomerEmail(
+  shop: string,
+  shopifyCustomerId: string
+): Promise<string | null> {
+  if (!shop || !shopifyCustomerId) {
+    return null;
+  }
+
+  try {
+    // Get admin API access using offline token
+    const { admin } = await unauthenticated.admin(shop);
+
+    const response = await admin.graphql(GET_CUSTOMER_EMAIL_QUERY, {
+      variables: {
+        id: `gid://shopify/Customer/${shopifyCustomerId}`,
+      },
+    });
+
+    const data = await response.json();
+    const email = data?.data?.customer?.email;
+
+    if (email) {
+      console.log(
+        `[getShopifyCustomerEmail] Found email for Shopify customer ${shopifyCustomerId}: ${email}`
+      );
+      return email.toLowerCase();
+    }
+
+    console.log(
+      `[getShopifyCustomerEmail] No email found for Shopify customer ${shopifyCustomerId}`
+    );
+    return null;
+  } catch (error) {
+    console.error(
+      `[getShopifyCustomerEmail] Failed to fetch email for customer ${shopifyCustomerId}:`,
+      error
+    );
+    return null;
+  }
 }
 
 // ============================================================================
