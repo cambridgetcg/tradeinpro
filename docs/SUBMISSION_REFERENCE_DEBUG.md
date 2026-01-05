@@ -1,5 +1,12 @@
 # Submission Reference Number - Debug Investigation
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `app/routes/ROUTES_SYNAPSE.md` → api.storefront.$.tsx (splat route), api.packing-slip.$number.tsx
+> - `app/lib/CODE_SYNAPSE.md` → submissions.server.ts (formatSubmissionForResponse)
+> - Related bug: `trade-in-success-page-bug-analysis.md` → Visual evidence
+
 ## Issue
 After submission, the reference number shows "undefined" when the success page is displayed, and links like `/packing-slip/undefined` are being called.
 

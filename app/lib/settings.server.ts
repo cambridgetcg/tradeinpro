@@ -1,10 +1,69 @@
 /**
  * Settings Management for Trade-In System
  * Handles CRUD operations, validation, and defaults for shop settings
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for full module dependency graph
+ *
+ * CACHING:
+ *   Settings are cached in-memory with a 5-minute TTL to reduce database load.
+ *   Cache is per-shop and automatically invalidates on settings updates.
+ *   Call invalidateSettingsCache(shop) to force refresh.
  */
 
 import prisma from "../db.server";
 import { Condition, type ConditionType } from "./constants";
+import { logger } from "./observability.server";
+
+// ============================================================================
+// GLOBAL SETTINGS CACHE
+// ============================================================================
+
+interface CacheEntry<T> {
+  data: T;
+  expires: number;
+}
+
+// Cache settings per shop with 5-minute TTL
+const settingsCache = new Map<string, CacheEntry<unknown>>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get cached value or null if expired/missing
+ */
+function getCached<T>(key: string): T | null {
+  const entry = settingsCache.get(key);
+  if (!entry) return null;
+
+  if (Date.now() > entry.expires) {
+    settingsCache.delete(key);
+    return null;
+  }
+
+  return entry.data as T;
+}
+
+/**
+ * Set cache value with TTL
+ */
+function setCache<T>(key: string, data: T): void {
+  settingsCache.set(key, {
+    data,
+    expires: Date.now() + CACHE_TTL_MS,
+  });
+}
+
+/**
+ * Invalidate cache for a specific shop
+ */
+export function invalidateSettingsCache(shop?: string): void {
+  if (shop) {
+    settingsCache.delete(`settings:${shop}`);
+    logger.debug("Settings cache invalidated", { shop });
+  } else {
+    settingsCache.clear();
+    logger.debug("Settings cache cleared", { scope: "all" });
+  }
+}
 
 // ============================================================================
 // TYPES
@@ -304,10 +363,23 @@ export function validateSettings(input: TradeInSettingsInput): SettingsValidatio
 // DATABASE OPERATIONS
 // ============================================================================
 
+// Type for cached settings (Prisma model type)
+type TradeInSettings = Awaited<ReturnType<typeof prisma.tradeInSettings.findUnique>>;
+
 /**
  * Get settings for a shop, creating defaults if none exist
+ * Uses in-memory cache with 5-minute TTL
  */
-export async function getOrCreateSettings(shop: string) {
+export async function getOrCreateSettings(shop: string): Promise<NonNullable<TradeInSettings>> {
+  const cacheKey = `settings:${shop}`;
+
+  // Check cache first
+  const cached = getCached<NonNullable<TradeInSettings>>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  // Cache miss - fetch from database
   let settings = await prisma.tradeInSettings.findUnique({
     where: { shop },
   });
@@ -318,16 +390,36 @@ export async function getOrCreateSettings(shop: string) {
     });
   }
 
+  // Cache the result
+  setCache(cacheKey, settings);
+
   return settings;
 }
 
 /**
  * Get settings for a shop (returns null if not found)
+ * Uses in-memory cache with 5-minute TTL
  */
-export async function getSettings(shop: string) {
-  return prisma.tradeInSettings.findUnique({
+export async function getSettings(shop: string): Promise<TradeInSettings> {
+  const cacheKey = `settings:${shop}`;
+
+  // Check cache first
+  const cached = getCached<TradeInSettings>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  // Cache miss - fetch from database
+  const settings = await prisma.tradeInSettings.findUnique({
     where: { shop },
   });
+
+  // Cache the result (even if null - prevents repeated lookups for non-existent shops)
+  if (settings) {
+    setCache(cacheKey, settings);
+  }
+
+  return settings;
 }
 
 /**
@@ -425,6 +517,9 @@ export async function updateSettings(
     create: { shop, ...data },
     update: data,
   });
+
+  // Invalidate cache to ensure fresh data on next read
+  invalidateSettingsCache(shop);
 
   return { success: true, settings };
 }

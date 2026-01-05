@@ -3,6 +3,14 @@
 > **Purpose:** Technical deep-dive into the trade-in submission system, documenting component architecture, data flow, and optimization opportunities.
 > **Last Updated:** 2026-01-01
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `app/lib/CODE_SYNAPSE.md` → submissions.server.ts, pricing.server.ts, settings.server.ts
+> - `app/routes/ROUTES_SYNAPSE.md` → api.submissions.tsx, api.cards.*.tsx
+> - `extensions/EXTENSIONS_SYNAPSE.md` → trade-in-form.liquid, trade-in.js
+> - `../../trading-card-pricer/docs/PRICER_SYNAPSE.md` → CardPriceV2 data source
+
 ---
 
 ## Table of Contents

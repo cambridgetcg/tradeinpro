@@ -5,7 +5,15 @@
  * API Documentation: https://developer.royalmail.net/api
  *
  * Requires ROYAL_MAIL_API_KEY environment variable from Click & Drop dashboard.
+ *
+ * RESILIENCE:
+ *   - Circuit breaker protection (3 failures opens circuit)
+ *   - Rate limiting (2 requests/second)
+ *   - Structured logging and metrics
  */
+
+import { royalMailCircuitBreaker, CircuitOpenError } from "../lib/circuit-breaker.server";
+import { withTrace, logger, metrics, type TraceHandle } from "../lib/observability.server";
 
 const API_BASE_URL =
   process.env.ROYAL_MAIL_BASE_URL || "https://api.parcel.royalmail.com";
@@ -220,106 +228,184 @@ export class RoyalMailService {
 
   /**
    * Create a shipping order and optionally get the label
+   * Protected by circuit breaker - fails fast if Royal Mail API is down
    */
   async createOrder(
     request: CreateOrderRequest
   ): Promise<RoyalMailResult<RoyalMailOrder>> {
-    const orderPayload = {
-      items: [
-        {
-          orderReference: request.orderReference,
-          recipient: {
-            fullName: request.recipient.fullName,
-            companyName: request.recipient.companyName,
-            addressLine1: request.recipient.address.addressLine1,
-            addressLine2: request.recipient.address.addressLine2,
-            addressLine3: request.recipient.address.addressLine3,
-            city: request.recipient.address.city,
-            county: request.recipient.address.county,
-            postcode: request.recipient.address.postcode,
-            countryCode: request.recipient.address.countryCode,
-            emailAddress: request.recipient.emailAddress,
-            telephoneNumber: request.recipient.telephoneNumber,
-          },
-          sender: {
-            tradingName: request.sender.tradingName,
-            companyName: request.sender.companyName,
-            addressLine1: request.sender.address.addressLine1,
-            addressLine2: request.sender.address.addressLine2,
-            city: request.sender.address.city,
-            county: request.sender.address.county,
-            postcode: request.sender.address.postcode,
-            countryCode: request.sender.address.countryCode,
-            emailAddress: request.sender.emailAddress,
-            telephoneNumber: request.sender.telephoneNumber,
-          },
-          orderDate: request.orderDate,
-          subtotal: request.subtotal,
-          shippingCostCharged: request.shippingCostCharged,
-          total: request.total,
-          currencyCode: request.currencyCode,
-          packages: [
-            {
-              weightInGrams: request.weightInGrams,
-              packageFormatIdentifier: request.packageFormatIdentifier,
-              contents: [
-                {
-                  name: "Trading Cards",
-                  quantity: 1,
-                  unitValue: request.subtotal,
-                  unitWeightInGrams: request.weightInGrams,
-                },
-              ],
-            },
-          ],
-          label: {
-            includeLabelInResponse: request.includeLabelInResponse,
-          },
-          postageDetails: {
-            serviceCode: request.serviceCode,
-            receiveEmailNotification: true,
-            requiresSignature: request.requiresSignature ?? false,
-          },
-        },
-      ],
-    };
-
-    const result = await this.request<RoyalMailOrderResponse>(
-      "POST",
-      "/api/v1/orders",
-      orderPayload
-    );
-
-    if (!result.success) {
-      return result;
-    }
-
-    const response = result.data;
-
-    // Check for failed orders
-    if (response.failureCount > 0 && response.failedOrders?.length) {
-      const failure = response.failedOrders[0];
+    // Check configuration BEFORE circuit breaker (so NOT_CONFIGURED is not swallowed)
+    if (!this.isConfigured()) {
       return {
         success: false,
         error: {
-          code: failure.errorCode || "ORDER_FAILED",
-          message: failure.errorMessage || "Failed to create order",
+          code: "NOT_CONFIGURED",
+          message: "Royal Mail API key not configured",
         },
       };
     }
 
-    // Get the created order
-    if (response.successCount > 0 && response.createdOrders?.length) {
-      return { success: true, data: response.createdOrders[0] };
-    }
+    return withTrace("royalmail.createOrder", {
+      orderReference: request.orderReference,
+      serviceCode: request.serviceCode,
+    }, async (trace) => {
+      try {
+        // Circuit breaker wraps the API call
+        const order = await royalMailCircuitBreaker.execute(
+          async () => {
+            trace.log("Building order payload");
+            const orderPayload = {
+              items: [
+                {
+                  orderReference: request.orderReference,
+                  recipient: {
+                    fullName: request.recipient.fullName,
+                    companyName: request.recipient.companyName,
+                    addressLine1: request.recipient.address.addressLine1,
+                    addressLine2: request.recipient.address.addressLine2,
+                    addressLine3: request.recipient.address.addressLine3,
+                    city: request.recipient.address.city,
+                    county: request.recipient.address.county,
+                    postcode: request.recipient.address.postcode,
+                    countryCode: request.recipient.address.countryCode,
+                    emailAddress: request.recipient.emailAddress,
+                    telephoneNumber: request.recipient.telephoneNumber,
+                  },
+                  sender: {
+                    tradingName: request.sender.tradingName,
+                    companyName: request.sender.companyName,
+                    addressLine1: request.sender.address.addressLine1,
+                    addressLine2: request.sender.address.addressLine2,
+                    city: request.sender.address.city,
+                    county: request.sender.address.county,
+                    postcode: request.sender.address.postcode,
+                    countryCode: request.sender.address.countryCode,
+                    emailAddress: request.sender.emailAddress,
+                    telephoneNumber: request.sender.telephoneNumber,
+                  },
+                  orderDate: request.orderDate,
+                  subtotal: request.subtotal,
+                  shippingCostCharged: request.shippingCostCharged,
+                  total: request.total,
+                  currencyCode: request.currencyCode,
+                  packages: [
+                    {
+                      weightInGrams: request.weightInGrams,
+                      packageFormatIdentifier: request.packageFormatIdentifier,
+                      contents: [
+                        {
+                          name: "Trading Cards",
+                          quantity: 1,
+                          unitValue: request.subtotal,
+                          unitWeightInGrams: request.weightInGrams,
+                        },
+                      ],
+                    },
+                  ],
+                  label: {
+                    includeLabelInResponse: request.includeLabelInResponse,
+                  },
+                  postageDetails: {
+                    serviceCode: request.serviceCode,
+                    receiveEmailNotification: true,
+                    requiresSignature: request.requiresSignature ?? false,
+                  },
+                },
+              ],
+            };
 
-    return {
-      success: false,
-      error: {
-        code: "NO_ORDER_CREATED",
-        message: "No order was created",
-      },
-    };
+            trace.log("Sending request to Royal Mail API");
+            const result = await this.request<RoyalMailOrderResponse>(
+              "POST",
+              "/api/v1/orders",
+              orderPayload
+            );
+
+            if (!result.success) {
+              trace.addAttribute("errorCode", result.error.code);
+              throw new Error(`Royal Mail API error: ${result.error.code} - ${result.error.message}`);
+            }
+
+            const response = result.data;
+
+            // Check for failed orders
+            if (response.failureCount > 0 && response.failedOrders?.length) {
+              const failure = response.failedOrders[0];
+              trace.addAttribute("errorCode", failure.errorCode);
+              throw new Error(`Royal Mail order failed: ${failure.errorCode} - ${failure.errorMessage}`);
+            }
+
+            // Get the created order
+            if (response.successCount > 0 && response.createdOrders?.length) {
+              return response.createdOrders[0];
+            }
+
+            throw new Error("No order was created");
+          }
+        );
+
+        // Success path
+        trace.setResult("success");
+        trace.addAttribute("orderIdentifier", order.orderIdentifier);
+        metrics.increment("royalmail.order.created");
+        logger.info("Royal Mail order created", {
+          orderReference: request.orderReference,
+          orderIdentifier: order.orderIdentifier,
+          trackingNumber: order.trackingNumber,
+        }, trace.traceId);
+        return { success: true, data: order };
+
+      } catch (error) {
+        // Handle circuit open or other errors
+        trace.setResult("error");
+        const isCircuitOpen = error instanceof CircuitOpenError;
+        trace.addAttribute("circuitOpen", isCircuitOpen);
+
+        // Extract original error code from error message
+        let errorCode = "ORDER_FAILED";
+        let errorMessage = error instanceof Error ? error.message : "Failed to create order";
+
+        if (isCircuitOpen) {
+          errorCode = "SERVICE_UNAVAILABLE";
+          logger.warn("Royal Mail circuit open", {
+            orderReference: request.orderReference,
+          }, trace.traceId);
+        } else {
+          // Parse error code from structured error messages:
+          // "Royal Mail API error: HTTP_401 - Invalid API key"
+          // "Royal Mail order failed: INVALID_POSTCODE - Invalid postcode format"
+          if (error instanceof Error) {
+            const apiErrorMatch = error.message.match(/Royal Mail API error: (\w+) - (.+)/);
+            const orderFailedMatch = error.message.match(/Royal Mail order failed: (\w+) - (.+)/);
+
+            if (apiErrorMatch) {
+              errorCode = apiErrorMatch[1];
+              errorMessage = apiErrorMatch[2];
+            } else if (orderFailedMatch) {
+              errorCode = orderFailedMatch[1];
+              errorMessage = orderFailedMatch[2];
+            } else if (error.message.includes("Network")) {
+              errorCode = "NETWORK_ERROR";
+            }
+          }
+
+          logger.error("Royal Mail createOrder failed", {
+            orderReference: request.orderReference,
+            errorCode,
+            error: errorMessage,
+          }, trace.traceId);
+        }
+
+        trace.addAttribute("errorCode", errorCode);
+
+        return {
+          success: false,
+          error: {
+            code: errorCode,
+            message: errorMessage,
+          },
+        };
+      }
+    });
   }
 
   /**

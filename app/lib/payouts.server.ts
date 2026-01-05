@@ -1,12 +1,16 @@
 /**
  * Payout Processing for Trade-In System
  * Handles store credit (gift cards), bank transfers, and PayPal payouts
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for module dependencies
  */
 
 import prisma from "../db.server";
 import type { Prisma } from "@prisma/client";
 import { getOrCreateSettings } from "./settings.server";
 import { PayoutStatus, PayoutType, type PayoutStatusType, type PayoutTypeValue } from "./constants";
+import { shopifyAdminCircuitBreaker, CircuitOpenError } from "./circuit-breaker.server";
+import { withTrace, logger, metrics } from "./observability.server";
 
 // ============================================================================
 // TYPES
@@ -322,119 +326,157 @@ interface ShopifyAdminContext {
 
 /**
  * Process store credit payout by creating a Shopify gift card
+ * Protected by circuit breaker to prevent cascading failures
  */
 export async function processStoreCreditPayout(
   payoutId: string,
   admin: ShopifyAdminContext
 ): Promise<PayoutResult> {
-  const payout = await prisma.payout.findUnique({
-    where: { id: payoutId },
-    include: {
-      submission: true,
-      customer: true,
-    },
-  });
-
-  if (!payout) {
-    return { success: false, error: "Payout not found" };
-  }
-
-  if (payout.status === PayoutStatus.COMPLETED) {
-    return { success: false, error: "Payout already completed" };
-  }
-
-  if (payout.type !== PayoutType.STORE_CREDIT) {
-    return { success: false, error: "Payout is not store credit type" };
-  }
-
-  // Mark as processing
-  await prisma.payout.update({
-    where: { id: payoutId },
-    data: { status: PayoutStatus.PROCESSING },
-  });
-
-  try {
-    // Convert pence to pounds for Shopify
-    const amountInPounds = (payout.totalAmount / 100).toFixed(2);
-
-    const response = await admin.graphql(CREATE_GIFT_CARD_MUTATION, {
-      variables: {
-        input: {
-          initialValue: amountInPounds,
-          customerId: payout.customer.shopifyCustomerId
-            ? `gid://shopify/Customer/${payout.customer.shopifyCustomerId}`
-            : null,
-          note: `Trade-in #${payout.submission.submissionNumber}`,
-          expiresOn: null, // No expiry
-        },
+  return withTrace("payout.processStoreCredit", { payoutId }, async (trace) => {
+    const payout = await prisma.payout.findUnique({
+      where: { id: payoutId },
+      include: {
+        submission: true,
+        customer: true,
       },
     });
 
-    const data = await response.json();
+    if (!payout) {
+      trace.setResult("error");
+      trace.addAttribute("reason", "not_found");
+      return { success: false, error: "Payout not found" };
+    }
 
-    if (data.data?.giftCardCreate?.userErrors?.length > 0) {
-      const errorMessage = data.data.giftCardCreate.userErrors[0].message;
+    trace.addAttribute("submissionNumber", payout.submission.submissionNumber);
+    trace.addAttribute("amount", payout.totalAmount);
+
+    if (payout.status === PayoutStatus.COMPLETED) {
+      trace.setResult("error");
+      trace.addAttribute("reason", "already_completed");
+      return { success: false, error: "Payout already completed" };
+    }
+
+    if (payout.type !== PayoutType.STORE_CREDIT) {
+      trace.setResult("error");
+      trace.addAttribute("reason", "wrong_type");
+      return { success: false, error: "Payout is not store credit type" };
+    }
+
+    // Mark as processing
+    await prisma.payout.update({
+      where: { id: payoutId },
+      data: { status: PayoutStatus.PROCESSING },
+    });
+    trace.log("Marked payout as processing");
+
+    try {
+      // Convert pence to pounds for Shopify
+      const amountInPounds = (payout.totalAmount / 100).toFixed(2);
+
+      // Circuit breaker protects the Shopify API call
+      const giftCard = await shopifyAdminCircuitBreaker.execute(async () => {
+        trace.log("Creating gift card via Shopify Admin API");
+        const response = await admin.graphql(CREATE_GIFT_CARD_MUTATION, {
+          variables: {
+            input: {
+              initialValue: amountInPounds,
+              customerId: payout.customer.shopifyCustomerId
+                ? `gid://shopify/Customer/${payout.customer.shopifyCustomerId}`
+                : null,
+              note: `Trade-in #${payout.submission.submissionNumber}`,
+              expiresOn: null, // No expiry
+            },
+          },
+        });
+
+        const data = await response.json();
+
+        if (data.data?.giftCardCreate?.userErrors?.length > 0) {
+          const errorMessage = data.data.giftCardCreate.userErrors[0].message;
+          throw new Error(`Shopify error: ${errorMessage}`);
+        }
+
+        const card = data.data?.giftCardCreate?.giftCard;
+        if (!card) {
+          throw new Error("No gift card returned from Shopify");
+        }
+
+        return card;
+      });
+
+      // Update payout with gift card details
+      const updatedPayout = await prisma.payout.update({
+        where: { id: payoutId },
+        data: {
+          status: PayoutStatus.COMPLETED,
+          giftCardId: giftCard.id,
+          giftCardCode: giftCard.maskedCode,
+          processedAt: new Date(),
+        },
+      });
+
+      // Also update submission to completed
+      await prisma.tradeInSubmission.update({
+        where: { id: payout.submissionId },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+        },
+      });
+
+      trace.setResult("success");
+      trace.addAttribute("giftCardId", giftCard.id);
+      metrics.increment("payout.store_credit.completed");
+      logger.info("Store credit payout completed", {
+        payoutId,
+        submissionNumber: payout.submission.submissionNumber,
+        amount: amountInPounds,
+        giftCardId: giftCard.id,
+      });
+
+      return {
+        success: true,
+        payout: updatedPayout,
+        giftCard: {
+          id: giftCard.id,
+          code: giftCard.maskedCode,
+          lastCharacters: giftCard.lastCharacters,
+          balance: giftCard.balance.amount,
+        },
+      };
+    } catch (error) {
+      trace.setResult("error");
+      const isCircuitOpen = error instanceof CircuitOpenError;
+      trace.addAttribute("circuitOpen", isCircuitOpen);
+
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
       await prisma.payout.update({
         where: { id: payoutId },
         data: {
           status: PayoutStatus.FAILED,
-          failureReason: errorMessage,
+          failureReason: isCircuitOpen ? "Shopify API temporarily unavailable" : errorMessage,
         },
       });
 
+      if (isCircuitOpen) {
+        metrics.increment("payout.store_credit.circuit_open");
+        logger.warn("Gift card creation failed - circuit open", {
+          payoutId,
+          submissionNumber: payout.submission.submissionNumber,
+        });
+      } else {
+        metrics.increment("payout.store_credit.failed");
+        logger.error("Gift card creation failed", {
+          payoutId,
+          submissionNumber: payout.submission.submissionNumber,
+          error: errorMessage,
+        });
+      }
+
       return { success: false, error: errorMessage };
     }
-
-    const giftCard = data.data?.giftCardCreate?.giftCard;
-
-    if (!giftCard) {
-      throw new Error("No gift card returned from Shopify");
-    }
-
-    // Update payout with gift card details
-    const updatedPayout = await prisma.payout.update({
-      where: { id: payoutId },
-      data: {
-        status: PayoutStatus.COMPLETED,
-        giftCardId: giftCard.id,
-        giftCardCode: giftCard.maskedCode,
-        processedAt: new Date(),
-      },
-    });
-
-    // Also update submission to completed
-    await prisma.tradeInSubmission.update({
-      where: { id: payout.submissionId },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-      },
-    });
-
-    return {
-      success: true,
-      payout: updatedPayout,
-      giftCard: {
-        id: giftCard.id,
-        code: giftCard.maskedCode,
-        lastCharacters: giftCard.lastCharacters,
-        balance: giftCard.balance.amount,
-      },
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-    await prisma.payout.update({
-      where: { id: payoutId },
-      data: {
-        status: PayoutStatus.FAILED,
-        failureReason: errorMessage,
-      },
-    });
-
-    return { success: false, error: errorMessage };
-  }
+  });
 }
 
 // ============================================================================

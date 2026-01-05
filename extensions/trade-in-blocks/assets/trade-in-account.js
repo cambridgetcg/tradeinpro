@@ -1,6 +1,33 @@
 /**
  * Trade-In Account Client Logic
  * Handles customer submissions list, detail view, and actions
+ *
+ * @synapse THEME APP EXTENSION INTEGRATION
+ *
+ * TEMPLATE:
+ *   - blocks/my-submissions.liquid (Theme App Extension block)
+ *
+ * STYLESHEET:
+ *   - assets/trade-in-account.css
+ *
+ * BACKEND ENDPOINTS CALLED:
+ *   - GET  /apps/trade-in/my-submissions         → api.my-submissions.tsx
+ *   - GET  /apps/trade-in/my-submissions/:number → api.my-submissions.$number.tsx
+ *   - POST /apps/trade-in/my-submissions/:number/action → api.my-submissions.$number.action.tsx
+ *
+ * AUTH MECHANISM:
+ *   - Shopify App Proxy adds: logged_in_customer_id, signature, timestamp
+ *   - X-Customer-Email header sent for customer linking (guest → account merge)
+ *
+ * BACKEND VALIDATION:
+ *   - cardforum/app/lib/app-proxy.server.ts (requireCustomer, validateAppProxy)
+ *
+ * DATA SOURCE (from Liquid):
+ *   - [data-customer-email] hidden input with {{ customer.email }}
+ *
+ * RELATED DOCS:
+ *   - docs/trade-in-history-extension-analysis.md (customer linking fix)
+ *   - docs/TRADE_IN_SYSTEM_SYNAPSE.md (full architecture)
  */
 
 (function () {
@@ -57,6 +84,7 @@
       container,
       apiBase: container.dataset.apiBase || "/apps/trade-in",
       customerId: container.querySelector("[data-customer-id]")?.value,
+      customerEmail: container.querySelector("[data-customer-email]")?.value,
       // Stats
       statTotal: container.querySelector("[data-stat-total]"),
       statPending: container.querySelector("[data-stat-pending]"),
@@ -94,8 +122,14 @@
       params.append("status", filter);
     }
 
+    // Include customer email for customer record linking
+    const headers = {};
+    if (elements.customerEmail) {
+      headers["X-Customer-Email"] = elements.customerEmail;
+    }
+
     try {
-      const response = await fetch(`${elements.apiBase}/my-submissions?${params}`);
+      const response = await fetch(`${elements.apiBase}/my-submissions?${params}`, { headers });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || "Failed to load submissions");
@@ -108,8 +142,14 @@
   }
 
   async function fetchSubmissionDetail(submissionNumber) {
+    // Include customer email for customer record linking
+    const headers = {};
+    if (elements.customerEmail) {
+      headers["X-Customer-Email"] = elements.customerEmail;
+    }
+
     try {
-      const response = await fetch(`${elements.apiBase}/my-submissions/${submissionNumber}`);
+      const response = await fetch(`${elements.apiBase}/my-submissions/${submissionNumber}`, { headers });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || "Failed to load submission details");
@@ -122,10 +162,16 @@
   }
 
   async function performAction(submissionNumber, actionType, data = {}) {
+    // Build headers with content type and customer email
+    const headers = { "Content-Type": "application/json" };
+    if (elements.customerEmail) {
+      headers["X-Customer-Email"] = elements.customerEmail;
+    }
+
     try {
       const response = await fetch(`${elements.apiBase}/my-submissions/${submissionNumber}/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ action: actionType, ...data }),
       });
 

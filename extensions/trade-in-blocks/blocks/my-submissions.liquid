@@ -15,6 +15,7 @@
   {% if customer %}
     {%- comment -%} Logged-in customer view {%- endcomment -%}
     <input type="hidden" data-customer-id value="{{ customer.id }}">
+    <input type="hidden" data-customer-email value="{{ customer.email | escape }}">
 
     <div class="trade-in-account__header">
       <div class="trade-in-account__header-content">

@@ -162,10 +162,19 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Fallback: Try to find recent submission by email
-    console.log(`[api.submissions] WARNING: Hitting fallback path - searching for recent submission by email`);
+    // This handles edge cases where:
+    // 1. Idempotency record was created but submission wasn't recorded yet (race condition)
+    // 2. Database had a partial write (submissionId not stored in idempotency record)
+    // 3. Content-based duplicate detected but original request is still processing
+    console.warn(`[api.submissions] FALLBACK: Duplicate detected but no submission ID available`, {
+      idempotencyKey: idempotencyKey || 'none',
+      contentHash,
+      email: body.email,
+    });
 
     try {
-      // Search for recent submission from this email
+      // Search for recent submission from this email with matching item count
+      // Using item count reduces false positives from unrelated submissions
       const recentSubmission = await prisma.tradeInSubmission.findFirst({
         where: {
           customer: {
@@ -183,22 +192,32 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       if (recentSubmission) {
-        console.log(`[api.submissions] Found recent submission via email search: ${recentSubmission.submissionNumber}`);
-        return jsonResponse(
-          {
-            success: true,
-            duplicate: true,
-            message: "Submission already exists",
-            submission: formatSubmissionForResponse(recentSubmission),
-          },
-          200
-        );
+        // Verify it's likely the same submission by checking item count matches
+        const itemCountMatch = recentSubmission.items.length === body.items.length;
+        console.log(`[api.submissions] FALLBACK: Found recent submission via email search`, {
+          submissionNumber: recentSubmission.submissionNumber,
+          itemCountMatch,
+          expectedItems: body.items.length,
+          foundItems: recentSubmission.items.length,
+        });
+
+        if (itemCountMatch) {
+          return jsonResponse(
+            {
+              success: true,
+              duplicate: true,
+              message: "Submission already exists",
+              submission: formatSubmissionForResponse(recentSubmission),
+            },
+            200
+          );
+        }
       }
     } catch (searchError) {
-      console.error(`[api.submissions] Fallback search failed:`, searchError);
+      console.error(`[api.submissions] FALLBACK: Search failed:`, searchError);
     }
 
-    // Last resort: return an error
+    // Last resort: return a user-friendly error instead of creating duplicate
     return jsonResponse(
       {
         success: false,
@@ -358,6 +377,22 @@ export async function action({ request }: ActionFunctionArgs) {
       console.error('[api.submissions] Failed to process shipping:', shippingError);
     }
 
+    // Check price freshness and generate warnings
+    const priceFreshnessWarnings: string[] = [];
+    if (body.cartOldestItemAt) {
+      const age = Date.now() - body.cartOldestItemAt;
+      if (age > PRICE_EXPIRED_THRESHOLD_MS) {
+        priceFreshnessWarnings.push('Your cart was over 24 hours old. Prices have been updated to current values.');
+      } else if (age > PRICE_STALE_THRESHOLD_MS) {
+        priceFreshnessWarnings.push('Your cart was over 2 hours old. Please verify the quoted values.');
+      }
+      console.log('[api.submissions] Cart age check:', {
+        ageMs: age,
+        ageHours: (age / (60 * 60 * 1000)).toFixed(2),
+        hasWarnings: priceFreshnessWarnings.length > 0,
+      });
+    }
+
     // Build success response
     const formattedSubmission = formatSubmissionForResponse(submittedSubmission);
     console.log('[api.submissions] Formatted submission:', JSON.stringify(formattedSubmission, null, 2));
@@ -365,6 +400,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const responseBody = JSON.stringify({
       success: true,
       submission: formattedSubmission,
+      warnings: priceFreshnessWarnings.length > 0 ? priceFreshnessWarnings : undefined,
     });
 
     // Debug: Log the exact response body being sent
@@ -413,6 +449,7 @@ interface CreateSubmissionRequest {
     variant?: string;
     quantity: number;
     conditionClaimed: string;
+    quotedPricePence?: number; // Client-side quoted price for validation
   }>;
   // Bank details (required when payoutType is BANK)
   bankAccountName?: string;
@@ -427,6 +464,8 @@ interface CreateSubmissionRequest {
   shippingCity?: string;
   shippingPostalCode?: string;
   shippingCountry?: string;
+  // Price freshness
+  cartOldestItemAt?: number; // Timestamp of oldest item in cart
 }
 
 const VALID_PAYOUT_TYPES = ["STORE_CREDIT", "BANK", "PAYPAL"];
@@ -434,6 +473,80 @@ const VALID_CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 const VALID_CONTACT_CHANNELS = ["WHATSAPP", "TELEGRAM", "SIGNAL"];
 const MAX_ITEMS = 100;
 const MAX_QUANTITY_PER_ITEM = 99;
+
+// Price freshness configuration
+const PRICE_STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours - prices may have changed
+const PRICE_EXPIRED_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours - prices definitely stale
+const PRICE_VARIANCE_THRESHOLD = 0.15; // 15% price change triggers warning
+
+/**
+ * Check if cart prices are stale and validate against current prices
+ */
+interface PriceFreshnessResult {
+  isStale: boolean;
+  isExpired: boolean;
+  warnings: string[];
+  priceChanges: Array<{
+    cardName: string;
+    oldPrice: number;
+    newPrice: number;
+    percentChange: number;
+  }>;
+}
+
+function checkPriceFreshness(
+  cartOldestItemAt: number | undefined,
+  items: Array<{ cardName: string; quotedPricePence?: number }>,
+  currentPrices: Map<string, number>
+): PriceFreshnessResult {
+  const now = Date.now();
+  const result: PriceFreshnessResult = {
+    isStale: false,
+    isExpired: false,
+    warnings: [],
+    priceChanges: [],
+  };
+
+  // Check time-based staleness
+  if (cartOldestItemAt) {
+    const age = now - cartOldestItemAt;
+    if (age > PRICE_EXPIRED_THRESHOLD_MS) {
+      result.isExpired = true;
+      result.isStale = true;
+      result.warnings.push('Cart items are over 24 hours old. Prices have been updated to current values.');
+    } else if (age > PRICE_STALE_THRESHOLD_MS) {
+      result.isStale = true;
+      result.warnings.push('Cart items are over 2 hours old. Prices may have changed.');
+    }
+  }
+
+  // Check individual price changes
+  for (const item of items) {
+    if (item.quotedPricePence !== undefined) {
+      const currentPrice = currentPrices.get(item.cardName);
+      if (currentPrice !== undefined && currentPrice !== item.quotedPricePence) {
+        const percentChange = Math.abs(currentPrice - item.quotedPricePence) / item.quotedPricePence;
+        if (percentChange > PRICE_VARIANCE_THRESHOLD) {
+          result.priceChanges.push({
+            cardName: item.cardName,
+            oldPrice: item.quotedPricePence,
+            newPrice: currentPrice,
+            percentChange: percentChange * 100,
+          });
+        }
+      }
+    }
+  }
+
+  if (result.priceChanges.length > 0) {
+    result.isStale = true;
+    result.warnings.push(
+      `${result.priceChanges.length} item(s) have price changes over 15%. Current prices will be used.`
+    );
+  }
+
+  return result;
+}
 
 function validateCreateSubmissionRequest(body: any): { valid: boolean; errors: string[] } {
   const errors: string[] = [];

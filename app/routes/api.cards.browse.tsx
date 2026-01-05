@@ -24,6 +24,10 @@ const DEFAULT_RESULTS = 24;
 const MIN_QUERY_LENGTH = 2;
 const MAX_QUERY_LENGTH = 100;
 
+// Price freshness thresholds
+const PRICE_FRESH_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours - prices are fresh
+const PRICE_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours - prices may be outdated
+
 
 export interface CardBrowseResult {
   cardId: string;
@@ -60,6 +64,11 @@ export interface CardBrowseResponse {
     minPrice: number | null;
     page: number;
     limit: number;
+  };
+  pricesFreshness: {
+    status: "fresh" | "stale" | "expired";
+    oldestUpdateAt: string | null;
+    message: string | null;
   };
 }
 
@@ -166,6 +175,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           imageUrl: true,
           bestPriceGbp: true,
           tradeinPriceGbp: true,
+          updatedAt: true, // For freshness check
         },
       }),
       // Get unique sets for filter dropdown
@@ -181,6 +191,33 @@ export async function loader({ request }: LoaderFunctionArgs) {
         orderBy: { releaseSet: "asc" },
       }),
     ]);
+
+    // Check price freshness based on most recent update
+    const now = Date.now();
+    let oldestUpdate: Date | null = null;
+
+    for (const card of cards) {
+      if (card.updatedAt) {
+        if (!oldestUpdate || card.updatedAt < oldestUpdate) {
+          oldestUpdate = card.updatedAt;
+        }
+      }
+    }
+
+    const oldestAge = oldestUpdate ? now - oldestUpdate.getTime() : 0;
+    const pricesFreshness = {
+      status: (oldestAge > PRICE_STALE_THRESHOLD_MS
+        ? "expired"
+        : oldestAge > PRICE_FRESH_THRESHOLD_MS
+          ? "stale"
+          : "fresh") as "fresh" | "stale" | "expired",
+      oldestUpdateAt: oldestUpdate?.toISOString() || null,
+      message: oldestAge > PRICE_STALE_THRESHOLD_MS
+        ? "Prices may be outdated. Please verify before submitting."
+        : oldestAge > PRICE_FRESH_THRESHOLD_MS
+          ? "Prices were last updated over 4 hours ago."
+          : null,
+    };
 
     // Transform results with condition prices
     // IMPORTANT: Use bestPriceGbp (market price) as the base for condition multipliers
@@ -232,6 +269,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         page,
         limit,
       },
+      pricesFreshness,
     };
 
     return jsonResponse(response);

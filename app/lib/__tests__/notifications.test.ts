@@ -424,11 +424,12 @@ describe("buildMerchantNewSubmissionEmail", () => {
 
 describe("sendEmail", () => {
   const originalEnv = process.env;
-  const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  // sendEmail now uses logger.debug which calls console.debug
+  const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
   beforeEach(() => {
     process.env = { ...originalEnv, NODE_ENV: "development" };
-    consoleSpy.mockClear();
+    debugSpy.mockClear();
   });
 
   afterEach(() => {
@@ -440,7 +441,8 @@ describe("sendEmail", () => {
     const result = await sendEmail(email);
 
     expect(result.success).toBe(true);
-    expect(consoleSpy).toHaveBeenCalled();
+    // Logger uses console.debug in development mode
+    expect(debugSpy).toHaveBeenCalled();
   });
 
   it("should return success in development", async () => {

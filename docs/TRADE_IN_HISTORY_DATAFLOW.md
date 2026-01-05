@@ -1,5 +1,7 @@
 # Trade-In History Data Flow Analysis
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+
 ## Overview
 
 This document describes the data flow for the "My Trade-Ins" (trade-in history) feature and identifies potential issues with customer matching between guest submissions and logged-in views.

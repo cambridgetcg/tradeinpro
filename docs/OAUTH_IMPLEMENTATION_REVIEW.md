@@ -4,6 +4,8 @@
 > **Reference:** `/Users/alex/rewards-pro` (production-grade implementation)
 > **Current:** `/Users/alex/TCG_TradeIn/cardforum`
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+
 ## Executive Summary
 
 Compared cardforum's OAuth 2.0 implementation against rewards-pro (a production-grade Shopify app). Several optimizations are recommended.

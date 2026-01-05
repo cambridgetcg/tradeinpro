@@ -8,6 +8,8 @@
  * - Reject grading and request return (from PENDING_APPROVAL)
  * - Cancel submission (from SUBMITTED/DRAFT)
  * - Update tracking number (from SUBMITTED/IN_TRANSIT)
+ *
+ * @synapse ROUTES_SYNAPSE.md - Uses workflow.server.ts for transition validation
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
@@ -18,7 +20,8 @@ import {
   sanitizeString,
 } from "../lib/app-proxy.server";
 import prisma from "../db.server";
-import { SubmissionStatus } from "../lib/constants";
+import { SubmissionStatus, SubmissionStatusLabels, type SubmissionStatusType } from "../lib/constants";
+import { executeTransition, isValidTransition } from "../lib/workflow.server";
 
 // ============================================================================
 // Types
@@ -120,16 +123,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // Handle each action type
     switch (actionType) {
       case "accept":
-        return handleAccept(submission, context.shop);
+        return handleAccept(submission, context.shop, context.internalCustomerId);
 
       case "reject":
-        return handleReject(submission, reason);
+        return handleReject(submission, reason, context.internalCustomerId);
 
       case "cancel":
-        return handleCancel(submission, reason);
+        return handleCancel(submission, reason, context.internalCustomerId);
 
       case "update_tracking":
-        return handleUpdateTracking(submission, trackingNumber);
+        return handleUpdateTracking(submission, trackingNumber, context.internalCustomerId);
 
       default:
         return errorResponse(400, "invalid_action", `Unknown action: ${actionType}`);
@@ -146,77 +149,34 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 async function handleAccept(
   submission: { id: string; submissionNumber: string; status: string },
-  shop: string
+  shop: string,
+  customerId: string
 ): Promise<Response> {
-  // Validate status
-  if (submission.status !== SubmissionStatus.PENDING_APPROVAL) {
+  // Use workflow engine for transition validation and execution
+  const result = await executeTransition({
+    submissionId: submission.id,
+    targetStatus: SubmissionStatus.APPROVED,
+    actorType: "CUSTOMER",
+    actorId: customerId,
+    reason: "Customer accepted the grading offer",
+    shop,
+  });
+
+  if (!result.success) {
     return errorResponse(
       400,
-      "invalid_status",
-      "Can only accept offers for submissions pending approval"
+      "transition_failed",
+      result.error || "Cannot accept offer in current state"
     );
-  }
-
-  // Update to APPROVED
-  const updated = await prisma.tradeInSubmission.update({
-    where: { id: submission.id },
-    data: {
-      status: SubmissionStatus.APPROVED,
-      approvedAt: new Date(),
-    },
-  });
-
-  // Add note
-  await prisma.submissionNote.create({
-    data: {
-      submissionId: submission.id,
-      authorType: "CUSTOMER",
-      message: "Customer accepted the grading offer",
-      isInternal: false,
-    },
-  });
-
-  // Create payout record for processing
-  try {
-    const { createPayout } = await import("../lib/payouts.server");
-    const payoutResult = await createPayout(shop, submission.id);
-
-    if (!payoutResult.success) {
-      console.error("[handleAccept] Failed to create payout:", payoutResult.error);
-      // Don't fail the accept - payout can be created manually
-      // But log it for visibility
-    } else {
-      console.log("[handleAccept] Payout created successfully for submission:", submission.submissionNumber);
-    }
-  } catch (payoutError) {
-    console.error("[handleAccept] Error creating payout:", payoutError);
-    // Don't fail the accept - payout can be created manually
-  }
-
-  // Send confirmation email to customer
-  try {
-    const fullSubmission = await prisma.tradeInSubmission.findUnique({
-      where: { id: submission.id },
-      include: { customer: true, items: true },
-    });
-
-    if (fullSubmission) {
-      const { sendGradingAcceptedNotification } = await import("../lib/notifications.server");
-      await sendGradingAcceptedNotification(fullSubmission);
-      console.log("[handleAccept] Acceptance notification sent for:", submission.submissionNumber);
-    }
-  } catch (emailError) {
-    console.error("[handleAccept] Failed to send acceptance notification:", emailError);
-    // Don't fail the accept if email fails
   }
 
   const response: ActionResponse = {
     success: true,
     message: "Offer accepted! Your payment will be processed shortly.",
     submission: {
-      submissionNumber: updated.submissionNumber,
-      status: updated.status,
-      statusLabel: "Approved",
+      submissionNumber: submission.submissionNumber,
+      status: SubmissionStatus.APPROVED,
+      statusLabel: SubmissionStatusLabels[SubmissionStatus.APPROVED],
     },
   };
 
@@ -225,66 +185,37 @@ async function handleAccept(
 
 async function handleReject(
   submission: { id: string; submissionNumber: string; status: string },
-  reason?: string
+  reason: string | undefined,
+  customerId: string
 ): Promise<Response> {
-  // Validate status
-  if (submission.status !== SubmissionStatus.PENDING_APPROVAL) {
-    return errorResponse(
-      400,
-      "invalid_status",
-      "Can only reject offers for submissions pending approval"
-    );
-  }
-
-  // Update to RETURNED
-  const updated = await prisma.tradeInSubmission.update({
-    where: { id: submission.id },
-    data: {
-      status: SubmissionStatus.RETURNED,
-    },
-  });
-
   const sanitizedReason = reason ? sanitizeString(reason, 500) : undefined;
 
-  // Add note
-  await prisma.submissionNote.create({
-    data: {
-      submissionId: submission.id,
-      authorType: "CUSTOMER",
-      message: sanitizedReason
-        ? `Customer rejected the offer and requested return. Reason: ${sanitizedReason}`
-        : "Customer rejected the offer and requested return",
-      isInternal: false,
-    },
+  // Use workflow engine for transition validation and execution
+  const result = await executeTransition({
+    submissionId: submission.id,
+    targetStatus: SubmissionStatus.RETURNED,
+    actorType: "CUSTOMER",
+    actorId: customerId,
+    reason: sanitizedReason
+      ? `Customer rejected offer: ${sanitizedReason}`
+      : "Customer rejected offer and requested return",
   });
 
-  // Send return confirmation email to customer
-  try {
-    const fullSubmission = await prisma.tradeInSubmission.findUnique({
-      where: { id: submission.id },
-      include: { customer: true, items: true },
-    });
-
-    if (fullSubmission) {
-      const { sendReturnRequestedNotification } = await import("../lib/notifications.server");
-      await sendReturnRequestedNotification(
-        fullSubmission,
-        sanitizedReason || "Customer rejected the grading offer and requested cards to be returned."
-      );
-      console.log("[handleReject] Return notification sent for:", submission.submissionNumber);
-    }
-  } catch (emailError) {
-    console.error("[handleReject] Failed to send return notification:", emailError);
-    // Don't fail the reject if email fails
+  if (!result.success) {
+    return errorResponse(
+      400,
+      "transition_failed",
+      result.error || "Cannot reject offer in current state"
+    );
   }
 
   const response: ActionResponse = {
     success: true,
     message: "Return requested. We will ship your cards back to you.",
     submission: {
-      submissionNumber: updated.submissionNumber,
-      status: updated.status,
-      statusLabel: "Returned",
+      submissionNumber: submission.submissionNumber,
+      status: SubmissionStatus.RETURNED,
+      statusLabel: SubmissionStatusLabels[SubmissionStatus.RETURNED],
     },
   };
 
@@ -293,46 +224,37 @@ async function handleReject(
 
 async function handleCancel(
   submission: { id: string; submissionNumber: string; status: string },
-  reason?: string
+  reason: string | undefined,
+  customerId: string
 ): Promise<Response> {
-  // Validate status - can only cancel before shipping
-  const cancellableStatuses = [SubmissionStatus.DRAFT, SubmissionStatus.SUBMITTED];
+  const sanitizedReason = reason ? sanitizeString(reason, 500) : undefined;
 
-  if (!cancellableStatuses.includes(submission.status as typeof SubmissionStatus.DRAFT)) {
+  // Use workflow engine for transition validation and execution
+  const result = await executeTransition({
+    submissionId: submission.id,
+    targetStatus: SubmissionStatus.CANCELLED,
+    actorType: "CUSTOMER",
+    actorId: customerId,
+    reason: sanitizedReason
+      ? `Customer cancelled: ${sanitizedReason}`
+      : "Customer cancelled submission",
+  });
+
+  if (!result.success) {
     return errorResponse(
       400,
-      "invalid_status",
-      "Can only cancel submissions that haven't been shipped yet"
+      "transition_failed",
+      result.error || "Cannot cancel submission in current state"
     );
   }
-
-  // Update to CANCELLED
-  const updated = await prisma.tradeInSubmission.update({
-    where: { id: submission.id },
-    data: {
-      status: SubmissionStatus.CANCELLED,
-    },
-  });
-
-  // Add note
-  await prisma.submissionNote.create({
-    data: {
-      submissionId: submission.id,
-      authorType: "CUSTOMER",
-      message: reason
-        ? `Customer cancelled submission. Reason: ${sanitizeString(reason, 500)}`
-        : "Customer cancelled submission",
-      isInternal: false,
-    },
-  });
 
   const response: ActionResponse = {
     success: true,
     message: "Submission cancelled successfully.",
     submission: {
-      submissionNumber: updated.submissionNumber,
-      status: updated.status,
-      statusLabel: "Cancelled",
+      submissionNumber: submission.submissionNumber,
+      status: SubmissionStatus.CANCELLED,
+      statusLabel: SubmissionStatusLabels[SubmissionStatus.CANCELLED],
     },
   };
 
@@ -341,12 +263,17 @@ async function handleCancel(
 
 async function handleUpdateTracking(
   submission: { id: string; submissionNumber: string; status: string },
-  trackingNumber?: string
+  trackingNumber: string | undefined,
+  customerId: string
 ): Promise<Response> {
-  // Validate status
-  const trackableStatuses = [SubmissionStatus.SUBMITTED, SubmissionStatus.IN_TRANSIT];
+  const currentStatus = submission.status as SubmissionStatusType;
+  const trackableStatuses: SubmissionStatusType[] = [
+    SubmissionStatus.SUBMITTED,
+    SubmissionStatus.IN_TRANSIT,
+  ];
 
-  if (!trackableStatuses.includes(submission.status as typeof SubmissionStatus.SUBMITTED)) {
+  // Validate current status allows tracking updates
+  if (!trackableStatuses.includes(currentStatus)) {
     return errorResponse(
       400,
       "invalid_status",
@@ -358,12 +285,23 @@ async function handleUpdateTracking(
     ? sanitizeString(trackingNumber, 100).toUpperCase()
     : null;
 
-  // Update tracking number and status
-  const newStatus =
-    sanitizedTracking && submission.status === SubmissionStatus.SUBMITTED
-      ? SubmissionStatus.IN_TRANSIT
-      : submission.status;
+  // Determine if we need a status transition
+  const needsTransition =
+    sanitizedTracking && currentStatus === SubmissionStatus.SUBMITTED;
+  const newStatus = needsTransition ? SubmissionStatus.IN_TRANSIT : currentStatus;
 
+  // If transitioning, validate via workflow
+  if (needsTransition) {
+    if (!isValidTransition(currentStatus, SubmissionStatus.IN_TRANSIT)) {
+      return errorResponse(
+        400,
+        "transition_failed",
+        "Cannot transition to IN_TRANSIT from current state"
+      );
+    }
+  }
+
+  // Update tracking number and status
   const updated = await prisma.tradeInSubmission.update({
     where: { id: submission.id },
     data: {
@@ -372,13 +310,15 @@ async function handleUpdateTracking(
     },
   });
 
-  // Add note if tracking was added
+  // Add note if tracking was added/updated
   if (sanitizedTracking) {
     await prisma.submissionNote.create({
       data: {
         submissionId: submission.id,
         authorType: "CUSTOMER",
-        message: `Customer added tracking number: ${sanitizedTracking}`,
+        message: needsTransition
+          ? `Customer added tracking number: ${sanitizedTracking}. Status changed to In Transit.`
+          : `Customer updated tracking number: ${sanitizedTracking}`,
         isInternal: false,
       },
     });
@@ -392,7 +332,7 @@ async function handleUpdateTracking(
     submission: {
       submissionNumber: updated.submissionNumber,
       status: updated.status,
-      statusLabel: newStatus === SubmissionStatus.IN_TRANSIT ? "In Transit" : "Submitted",
+      statusLabel: SubmissionStatusLabels[newStatus],
     },
   };
 

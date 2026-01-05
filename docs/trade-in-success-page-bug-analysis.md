@@ -4,6 +4,13 @@
 > **Status:** Bug Identified - Fix Required
 > **Severity:** High (Breaks core user experience)
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `../../ShopifyTheme_TCG/assets/ASSETS_SYNAPSE.md` → trade-in-app.js (success state rendering)
+> - `app/routes/ROUTES_SYNAPSE.md` → api.packing-slip.$number.tsx, api.track.$number.tsx
+> - Related debug: `SUBMISSION_REFERENCE_DEBUG.md` → Root cause investigation
+
 ---
 
 ## Table of Contents

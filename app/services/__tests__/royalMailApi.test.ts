@@ -16,6 +16,7 @@ import {
   type RoyalMailRecipient,
   type RoyalMailSender,
 } from "../royalMailApi.server";
+import { resetAllCircuitBreakers } from "../../lib/circuit-breaker.server";
 
 // ============================================================================
 // Test Fixtures
@@ -144,6 +145,8 @@ describe("RoyalMailService - Create Order", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     service = new RoyalMailService(testApiKey);
+    // Reset circuit breakers to prevent state leakage between tests
+    resetAllCircuitBreakers();
   });
 
   afterEach(() => {

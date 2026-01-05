@@ -9,6 +9,27 @@
  * rather than relative URLs.
  *
  * @see https://shopify.dev/docs/api/customer-account-ui-extensions/apis/session-token
+ *
+ * @synapse EXTENSION INTEGRATION POINT
+ *
+ * TOKEN PROVIDER:
+ *   - ../hooks/useSessionToken.ts (fetches and auto-refreshes JWT)
+ *
+ * BACKEND VALIDATION:
+ *   - cardforum/app/lib/app-proxy.server.ts (validateSessionToken)
+ *
+ * ENDPOINTS CALLED:
+ *   - GET  /apps/trade-in/my-submissions         → api.my-submissions.tsx
+ *   - GET  /apps/trade-in/my-submissions/:number → api.my-submissions.$number.tsx
+ *   - POST /apps/trade-in/my-submissions/:number/action → api.my-submissions.$number.action.tsx
+ *
+ * AUTH HEADER FORMAT:
+ *   - Authorization: Bearer <session_token_jwt>
+ *
+ * RELATED DOCS:
+ *   - docs/MY_SUBMISSIONS_FLOW_INVESTIGATION.md (OAuth 2.0 flow)
+ *   - docs/OAUTH_IMPLEMENTATION_REVIEW.md (JWT validation details)
+ *   - docs/TRADE_IN_SYSTEM_SYNAPSE.md (full architecture)
  */
 
 import type { SubmissionsResponse, SubmissionDetailResponse } from '../types';

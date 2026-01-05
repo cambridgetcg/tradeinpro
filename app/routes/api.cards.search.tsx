@@ -6,6 +6,13 @@
  * Public endpoint (via App Proxy) for searching the card catalog.
  * Used for autocomplete in the trade-in submission form.
  * Now queries CardPriceV2 directly for real-time prices and images.
+ *
+ * @synapse ROUTES_SYNAPSE.md - See ./ROUTES_SYNAPSE.md for route documentation
+ *
+ * MIGRATION NOTE:
+ *   This route can be migrated to use middleware pattern:
+ *   import { withAppProxy } from "../middleware/auth.server";
+ *   export const loader = withAppProxy(async ({ request, auth }) => { ... });
  */
 
 import type { LoaderFunctionArgs } from "react-router";
@@ -24,6 +31,10 @@ const MAX_RESULTS = 50;
 const DEFAULT_RESULTS = 20;
 const MIN_QUERY_LENGTH = 2;
 const MAX_QUERY_LENGTH = 100;
+
+// Price freshness thresholds
+const PRICE_FRESH_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours - prices are fresh
+const PRICE_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours - prices may be outdated
 
 
 export interface CardSearchResult {
@@ -116,8 +127,41 @@ export async function loader({ request }: LoaderFunctionArgs) {
         rarity: true,
         imageUrl: true,
         bestPriceGbp: true, // Market price - use this as base for calculations
+        updatedAt: true, // For freshness check
       },
     });
+
+    // Check price freshness based on most recent update
+    const now = Date.now();
+    let oldestUpdate: Date | null = null;
+    let newestUpdate: Date | null = null;
+
+    for (const card of cards) {
+      if (card.updatedAt) {
+        if (!oldestUpdate || card.updatedAt < oldestUpdate) {
+          oldestUpdate = card.updatedAt;
+        }
+        if (!newestUpdate || card.updatedAt > newestUpdate) {
+          newestUpdate = card.updatedAt;
+        }
+      }
+    }
+
+    const oldestAge = oldestUpdate ? now - oldestUpdate.getTime() : 0;
+    const pricesFreshness = {
+      status: oldestAge > PRICE_STALE_THRESHOLD_MS
+        ? "expired"
+        : oldestAge > PRICE_FRESH_THRESHOLD_MS
+          ? "stale"
+          : "fresh",
+      oldestUpdateAt: oldestUpdate?.toISOString() || null,
+      newestUpdateAt: newestUpdate?.toISOString() || null,
+      message: oldestAge > PRICE_STALE_THRESHOLD_MS
+        ? "Prices may be outdated. Please verify before submitting."
+        : oldestAge > PRICE_FRESH_THRESHOLD_MS
+          ? "Prices were last updated over 4 hours ago."
+          : null,
+    };
 
     // Transform to API response format with condition prices
     // IMPORTANT: Use bestPriceGbp (market price) as the base for condition multipliers
@@ -159,6 +203,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         limit,
         minPrice: minPrice || null,
       },
+      pricesFreshness,
     });
   } catch (error) {
     console.error("Card search error:", error);

@@ -1,6 +1,27 @@
 /**
  * Customer-facing submission management
  * Handles creation, validation, and status tracking of trade-in submissions
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for full module dependency graph
+ *
+ * IMPORTS FROM:
+ *   - ./constants.ts (status enums, formatPrice)
+ *   - ./settings.server.ts (condition multipliers, thresholds)
+ *   - ./prisma-errors.ts (retry logic)
+ *
+ * IMPORTED BY:
+ *   - ../routes/api.submissions.tsx (createSubmission, formatSubmissionForResponse)
+ *   - ../routes/api.my-submissions.tsx (query patterns)
+ *   - ../routes/api.track.tsx (getSubmissionByNumber)
+ *   - ../routes/api.packing-slip.$number.tsx (submission lookup)
+ *
+ * CONSUMED BY (Frontend):
+ *   - ShopifyTheme_TCG/assets/trade-in-app.js (POST /submissions)
+ *   - extensions/trade-in-account/src/api/client.ts (GET my-submissions)
+ *
+ * RELATED DOCS:
+ *   - docs/TRADE_IN_SYSTEM_SYNAPSE.md (full system architecture)
+ *   - docs/trade-in-submission-flow.md (detailed flow)
  */
 
 import prisma from "../db.server";
@@ -13,6 +34,8 @@ import {
   sleep,
   calculateBackoffDelay,
 } from "./prisma-errors";
+import { withTrace, logger, metrics } from "./observability.server";
+import { withDbRetry } from "./db-resilience.server";
 
 // ============================================================================
 // Retry Configuration
@@ -208,15 +231,11 @@ export async function validateAndPrepareItems(
     .map(i => i.cardPriceId)
     .filter((id): id is string => !!id && id.trim().length > 0);
 
-  console.log('[validateAndPrepareItems] Input items count:', items.length);
-  console.log('[validateAndPrepareItems] cardIds to lookup:', JSON.stringify(cardIds));
+  logger.debug("Validating items", { itemCount: items.length, cardIdCount: cardIds.length });
 
   // 2. Single batch lookup (1 query instead of N)
   const cardsMap = await batchLookupCardPricesV2(cardIds);
-  console.log('[validateAndPrepareItems] cardsMap size:', cardsMap.size);
-  if (cardsMap.size > 0) {
-    console.log('[validateAndPrepareItems] cardsMap keys:', JSON.stringify(Array.from(cardsMap.keys())));
-  }
+  logger.debug("Batch card lookup complete", { foundCount: cardsMap.size, requestedCount: cardIds.length });
 
   // 3. Process all items without additional DB queries
   const validatedItems: ValidatedItem[] = [];
@@ -231,14 +250,13 @@ export async function validateAndPrepareItems(
     // Look up card from pre-fetched map
     const card = item.cardPriceId ? cardsMap.get(item.cardPriceId) || null : null;
 
-    // Debug: Show exactly what we're looking up
-    console.log('[validateAndPrepareItems] Looking up:', {
-      cardPriceId: item.cardPriceId,
-      cardPriceIdType: typeof item.cardPriceId,
-      cardPriceIdLength: item.cardPriceId?.length,
-      found: !!card,
-      cardName: item.cardName
-    });
+    // Debug logging for card lookup
+    if (!card && item.cardPriceId) {
+      logger.debug("Card not found in batch lookup", {
+        cardPriceId: item.cardPriceId,
+        cardName: item.cardName,
+      });
+    }
 
     if (!card) {
       validatedItems.push({
@@ -260,7 +278,6 @@ export async function validateAndPrepareItems(
     // Get market price and calculate condition price
     const marketPricePence = card.bestPriceGbp ? Math.round(Number(card.bestPriceGbp) * 100) : 0;
     const price = calculatePriceFromCard(card, item.conditionClaimed, settings);
-    console.log('[validateAndPrepareItems] calculated price:', price, 'for condition:', item.conditionClaimed, 'market:', marketPricePence);
     totalValue += price * item.quantity;
 
     validatedItems.push({
@@ -272,7 +289,12 @@ export async function validateAndPrepareItems(
     });
   }
 
-  console.log('[validateAndPrepareItems] totalValue:', totalValue, 'minimumRequired:', settings.minimumSubmissionValue);
+  logger.debug("Validation totals calculated", {
+    totalValue,
+    minimumRequired: settings.minimumSubmissionValue,
+    totalItems,
+    invalidCount: invalidCards.length,
+  });
 
   // 4. Threshold validation
   if (totalValue < settings.minimumSubmissionValue) {
@@ -287,7 +309,9 @@ export async function validateAndPrepareItems(
     errors.push(`Cards not found or not accepting: ${invalidCards.join(", ")}`);
   }
 
-  console.log('[validateAndPrepareItems] errors:', errors);
+  if (errors.length > 0) {
+    logger.debug("Validation errors found", { errorCount: errors.length, firstError: errors[0] });
+  }
 
   return { validatedItems, errors, totalValue, totalItems };
 }
@@ -618,13 +642,17 @@ async function createSubmissionWithRetry(
   attempt: number = 0
 ): Promise<TradeInSubmission & { items: any[]; customer: any }> {
   try {
-    return await prisma.tradeInSubmission.create({
-      data: submissionData,
-      include: {
-        items: true,
-        customer: true,
-      },
-    });
+    // withDbRetry handles connection errors, collision retries are handled below
+    return await withDbRetry(
+      () => prisma.tradeInSubmission.create({
+        data: submissionData,
+        include: {
+          items: true,
+          customer: true,
+        },
+      }),
+      { label: "create-submission", maxRetries: 3 }
+    );
   } catch (error) {
     // Check if this is a unique constraint violation on submissionNumber
     if (isUniqueConstraintError(error)) {
@@ -635,9 +663,11 @@ async function createSubmissionWithRetry(
         attempt < MAX_SUBMISSION_NUMBER_RETRIES
       ) {
         // Log retry attempt for monitoring
-        console.log(
-          `[createSubmission] Submission number collision, retry ${attempt + 1}/${MAX_SUBMISSION_NUMBER_RETRIES}`
-        );
+        logger.warn("Submission number collision, retrying", {
+          attempt: attempt + 1,
+          maxRetries: MAX_SUBMISSION_NUMBER_RETRIES,
+        });
+        metrics.increment("submission.number_collision");
 
         // Wait with exponential backoff before retrying
         const delay = calculateBackoffDelay(attempt, RETRY_BASE_DELAY_MS);
@@ -675,81 +705,114 @@ async function createSubmissionWithRetry(
 export async function createSubmission(input: CreateSubmissionInput, shop?: string) {
   const shopId = shop || "default";
 
-  // 1. PARALLEL FETCH: Settings + Customer (2 queries instead of sequential)
-  const [settings, customer] = await Promise.all([
-    getCachedSettings(shopId),
-    getOrCreateCustomer({
-      shopifyCustomerId: input.shopifyCustomerId,
-      email: input.email,
-      firstName: input.firstName,
-      lastName: input.lastName,
-    })
-  ]);
-
-  // 2. SINGLE-PASS VALIDATION + PRICE CALCULATION (1 batch query for all cards)
-  const { validatedItems, errors, totalValue } = await validateAndPrepareItems(
-    input.items,
-    settings
-  );
-
-  if (errors.length > 0) {
-    clearSettingsCache();
-    return { success: false, errors };
-  }
-
-  // 3. Generate submission number (1 query)
-  const submissionNumber = await generateSubmissionNumber();
-
-  // 4. Calculate bonus (in-memory, no DB)
-  const bonusAmount = input.payoutType === PayoutType.STORE_CREDIT
-    ? Math.floor(totalValue * (settings.storeCreditBonusPercent / 100))
-    : 0;
-
-  // 5. Build submission data
-  // NOTE: cardPriceId is set to null because we're using CardPriceV2 for lookups,
-  // and the TradeInItem.cardPriceId FK references the legacy CardPrice table.
-  // Card details are denormalized in the item record anyway.
-  const submissionData: Prisma.TradeInSubmissionCreateInput = {
-    submissionNumber,
-    customer: { connect: { id: customer.id } },
-    status: "DRAFT",
+  return withTrace("submission.create", {
+    shop: shopId,
+    itemCount: input.items.length,
     payoutType: input.payoutType,
-    quotedTotal: totalValue,
-    bonusAmount,
-    // Bank details (only stored when payoutType is BANK)
-    ...(input.payoutType === PayoutType.BANK && {
-      bankAccountName: input.bankAccountName,
-      bankSortCode: input.bankSortCode,
-      bankAccountNumber: input.bankAccountNumber,
-    }),
-    // Contact preferences
-    phone: input.phone || null,
-    contactChannel: input.contactChannel || null,
-    items: {
-      create: validatedItems
-        .filter(vi => vi.isValid)
-        .map(vi => ({
-          cardPriceId: null, // CardPriceV2 IDs are incompatible with CardPrice FK
-          cardName: vi.input.cardName,
-          setName: vi.input.setName,
-          setCode: vi.input.setCode || null,
-          variant: vi.input.variant || null,
-          quantity: vi.input.quantity,
-          conditionClaimed: vi.input.conditionClaimed,
-          marketPricePence: vi.marketPricePence, // Store for grading recalculations
-          quotedPrice: vi.price * vi.input.quantity,
-          status: "PENDING",
-        })),
-    },
-  };
+    hasShopifyCustomer: !!input.shopifyCustomerId,
+  }, async (trace) => {
+    // 1. PARALLEL FETCH: Settings + Customer (2 queries instead of sequential)
+    trace.log("Fetching settings and customer in parallel");
+    const [settings, customer] = await Promise.all([
+      getCachedSettings(shopId),
+      getOrCreateCustomer({
+        shopifyCustomerId: input.shopifyCustomerId,
+        email: input.email,
+        firstName: input.firstName,
+        lastName: input.lastName,
+      })
+    ]);
+    trace.addAttribute("customerId", customer.id);
 
-  // 6. Create submission with automatic retry on collision
-  const submission = await createSubmissionWithRetry(submissionData);
+    // 2. SINGLE-PASS VALIDATION + PRICE CALCULATION (1 batch query for all cards)
+    trace.log("Validating and calculating prices");
+    const { validatedItems, errors, totalValue } = await validateAndPrepareItems(
+      input.items,
+      settings
+    );
 
-  // 7. Clear cache after request completes
-  clearSettingsCache();
+    if (errors.length > 0) {
+      clearSettingsCache();
+      trace.setResult("error");
+      trace.addAttribute("validationErrors", errors.length);
+      logger.info("Submission validation failed", {
+        errorCount: errors.length,
+        firstError: errors[0],
+      }, trace.traceId);
+      return { success: false, errors };
+    }
 
-  return { success: true, submission };
+    trace.addAttribute("quotedTotal", totalValue);
+
+    // 3. Generate submission number (1 query)
+    trace.log("Generating submission number");
+    const submissionNumber = await generateSubmissionNumber();
+    trace.addAttribute("submissionNumber", submissionNumber);
+
+    // 4. Calculate bonus (in-memory, no DB)
+    const bonusAmount = input.payoutType === PayoutType.STORE_CREDIT
+      ? Math.floor(totalValue * (settings.storeCreditBonusPercent / 100))
+      : 0;
+
+    // 5. Build submission data
+    // NOTE: cardPriceId is set to null because we're using CardPriceV2 for lookups,
+    // and the TradeInItem.cardPriceId FK references the legacy CardPrice table.
+    // Card details are denormalized in the item record anyway.
+    const submissionData: Prisma.TradeInSubmissionCreateInput = {
+      submissionNumber,
+      customer: { connect: { id: customer.id } },
+      status: "DRAFT",
+      payoutType: input.payoutType,
+      quotedTotal: totalValue,
+      bonusAmount,
+      // Bank details (only stored when payoutType is BANK)
+      ...(input.payoutType === PayoutType.BANK && {
+        bankAccountName: input.bankAccountName,
+        bankSortCode: input.bankSortCode,
+        bankAccountNumber: input.bankAccountNumber,
+      }),
+      // Contact preferences
+      phone: input.phone || null,
+      contactChannel: input.contactChannel || null,
+      items: {
+        create: validatedItems
+          .filter(vi => vi.isValid)
+          .map(vi => ({
+            cardPriceId: null, // CardPriceV2 IDs are incompatible with CardPrice FK
+            cardName: vi.input.cardName,
+            setName: vi.input.setName,
+            setCode: vi.input.setCode || null,
+            variant: vi.input.variant || null,
+            quantity: vi.input.quantity,
+            conditionClaimed: vi.input.conditionClaimed,
+            marketPricePence: vi.marketPricePence, // Store for grading recalculations
+            quotedPrice: vi.price * vi.input.quantity,
+            status: "PENDING",
+          })),
+      },
+    };
+
+    // 6. Create submission with automatic retry on collision
+    trace.log("Creating submission record");
+    const submission = await createSubmissionWithRetry(submissionData);
+
+    // 7. Clear cache after request completes
+    clearSettingsCache();
+
+    // Record success metrics
+    metrics.increment("submission.created");
+    metrics.increment(`submission.payout_type.${input.payoutType.toLowerCase()}`);
+    trace.setResult("success");
+
+    logger.info("Submission created successfully", {
+      submissionNumber,
+      submissionId: submission.id,
+      quotedTotal: totalValue,
+      itemCount: input.items.length,
+    }, trace.traceId);
+
+    return { success: true, submission };
+  });
 }
 
 /**

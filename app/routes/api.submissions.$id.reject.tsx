@@ -4,6 +4,8 @@
  * POST /apps/trade-in/submissions/:id/reject
  *
  * Customer rejects grading results and requests return of cards
+ *
+ * @synapse ROUTES_SYNAPSE.md - Uses workflow.server.ts for transition validation
  */
 
 import type { ActionFunctionArgs } from "react-router";
@@ -13,7 +15,9 @@ import {
   errorResponse,
   sanitizeString,
 } from "../lib/app-proxy.server";
-import { rejectSubmission, getSubmissionById } from "../lib/submissions.server";
+import { getSubmissionById } from "../lib/submissions.server";
+import { executeTransition } from "../lib/workflow.server";
+import { SubmissionStatus } from "../lib/constants";
 
 const MAX_REASON_LENGTH = 500;
 
@@ -50,33 +54,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return errorResponse(403, "forbidden", "Not authorized to reject this submission");
   }
 
-  // Check current status
-  if (submission.status !== "PENDING_APPROVAL") {
+  // Use workflow engine for transition validation and execution
+  const result = await executeTransition({
+    submissionId: id,
+    targetStatus: SubmissionStatus.RETURNED,
+    actorType: "CUSTOMER",
+    actorId: context.internalCustomerId,
+    reason: `Customer rejected offer: ${reason}`,
+    shop: context.shop,
+  });
+
+  if (!result.success) {
+    console.error("Reject submission error:", result.error);
     return errorResponse(
       409,
-      "invalid_status",
-      `Cannot reject submission with status '${submission.status}'. Must be 'PENDING_APPROVAL'.`
+      "transition_failed",
+      result.error || "Cannot reject submission in current state"
     );
   }
 
-  try {
-    const updated = await rejectSubmission(id, context.internalCustomerId, reason);
-
-    return jsonResponse({
-      success: true,
-      message: "Return requested. Your cards will be shipped back within 2-3 business days.",
-      submission: {
-        id: updated.id,
-        submissionNumber: updated.submissionNumber,
-        status: updated.status,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Reject submission error:", error);
-
-    return errorResponse(400, "reject_failed", message);
-  }
+  return jsonResponse({
+    success: true,
+    message: "Return requested. Your cards will be shipped back within 2-3 business days.",
+    submission: result.submission,
+    sideEffects: result.sideEffectsExecuted,
+  });
 }
 
 // Only POST is supported

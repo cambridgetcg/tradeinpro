@@ -4,6 +4,8 @@
 > **Issue:** "Failed to load submissions" on My Trade-Ins page
 > **Updated:** OAuth 2.0 Session Token support added
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+
 ## Executive Summary
 
 The "My Trade-Ins" page supports **two authentication methods**:

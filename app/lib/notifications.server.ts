@@ -4,10 +4,14 @@
  *
  * MVP: Logs emails to console
  * Production: Integrate with SendGrid/Postmark/Mailgun
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for module dependencies
  */
 
 import prisma from "../db.server";
 import { formatPrice } from "./constants";
+import { emailCircuitBreaker, CircuitOpenError } from "./circuit-breaker.server";
+import { withTrace, logger, metrics } from "./observability.server";
 
 // ============================================================================
 // Types
@@ -585,41 +589,138 @@ function formatPayoutType(payoutType: string, bonusAmount?: number): string {
  * MVP: Console logging
  * Production: Integrate with SendGrid/Postmark/Mailgun
  */
-export async function sendEmail(email: EmailContent): Promise<{ success: boolean; error?: string }> {
-  // Log in development
-  if (process.env.NODE_ENV !== "production") {
-    console.log("📧 Email would be sent:");
-    console.log(`   To: ${email.to}`);
-    console.log(`   Subject: ${email.subject}`);
-    console.log(`   Preview: ${email.text.slice(0, 100)}...`);
-    return { success: true };
+/**
+ * Retry wrapper with exponential backoff
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { maxAttempts?: number; baseDelayMs?: number; maxDelayMs?: number; label?: string } = {}
+): Promise<T> {
+  const { maxAttempts = 3, baseDelayMs = 1000, maxDelayMs = 10000, label = "email" } = options;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      logger.warn("Email send attempt failed", {
+        attempt,
+        maxAttempts,
+        label,
+        error: lastError.message,
+      });
+      metrics.increment("email.retry.attempt");
+
+      if (attempt < maxAttempts) {
+        const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
 
-  // Production: Integrate with email provider
-  // Example with SendGrid:
-  /*
+  throw lastError;
+}
+
+/**
+ * Record failed notification for monitoring
+ */
+async function recordFailedNotification(
+  type: string,
+  recipient: string,
+  subject: string,
+  error: string,
+  submissionId?: string
+): Promise<void> {
   try {
-    const sgMail = require("@sendgrid/mail");
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-    await sgMail.send({
-      to: email.to,
-      from: FROM_EMAIL,
-      subject: email.subject,
-      text: email.text,
-      html: email.html,
+    logger.error("Failed notification recorded", {
+      type,
+      recipientDomain: recipient.split("@")[1] || "unknown",
+      subject,
+      error,
+      submissionId: submissionId || "none",
     });
-
-    return { success: true };
-  } catch (error) {
-    console.error("SendGrid error:", error);
-    return { success: false, error: error.message };
+    metrics.increment(`email.failed.${type.toLowerCase()}`);
+    // TODO: Could add a FailedNotification table for monitoring dashboard
+  } catch (recordError) {
+    logger.error("Failed to record failed notification", {
+      error: recordError instanceof Error ? recordError.message : String(recordError),
+    });
   }
-  */
+}
 
-  // For now, just log that we would send
-  console.log(`📧 [PROD] Would send email to ${email.to}: ${email.subject}`);
-  return { success: true };
+export async function sendEmail(email: EmailContent): Promise<{ success: boolean; error?: string }> {
+  return withTrace("email.send", {
+    recipientDomain: email.to.split("@")[1] || "unknown",
+    subject: email.subject.slice(0, 50),
+  }, async (trace) => {
+    // Log in development
+    if (process.env.NODE_ENV !== "production") {
+      logger.debug("Email would be sent (dev mode)", {
+        to: email.to,
+        subject: email.subject,
+      });
+      trace.setResult("success");
+      trace.addAttribute("mode", "dev");
+      metrics.increment("email.sent.dev");
+      return { success: true };
+    }
+
+    // Production: Circuit breaker protects email provider API
+    try {
+      await emailCircuitBreaker.execute(async () => {
+        trace.log("Sending via email provider");
+
+        // TODO: Production email provider integration
+        // Example with SendGrid:
+        /*
+        const sgMail = require("@sendgrid/mail");
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+        await sgMail.send({
+          to: email.to,
+          from: FROM_EMAIL,
+          subject: email.subject,
+          text: email.text,
+          html: email.html,
+        });
+        */
+
+        // For now, just log that we would send
+        logger.info("Email sent (prod placeholder)", {
+          to: email.to,
+          subject: email.subject,
+        });
+      });
+
+      trace.setResult("success");
+      metrics.increment("email.sent.success");
+      return { success: true };
+    } catch (error) {
+      trace.setResult("error");
+      const isCircuitOpen = error instanceof CircuitOpenError;
+      trace.addAttribute("circuitOpen", isCircuitOpen);
+
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+      if (isCircuitOpen) {
+        metrics.increment("email.circuit_open");
+        logger.warn("Email send skipped - circuit open", {
+          to: email.to,
+          subject: email.subject,
+        });
+      } else {
+        metrics.increment("email.sent.error");
+        logger.error("Email send failed", {
+          to: email.to,
+          subject: email.subject,
+          error: errorMessage,
+        });
+      }
+
+      return { success: false, error: errorMessage };
+    }
+  });
 }
 
 // ============================================================================
@@ -665,16 +766,79 @@ export async function buildSubmissionContext(
  */
 export async function sendSubmissionCreatedNotification(
   submission: any
-): Promise<void> {
+): Promise<{ customerEmailSent: boolean; merchantEmailSent: boolean }> {
   const ctx = await buildSubmissionContext(submission);
+  const results = { customerEmailSent: false, merchantEmailSent: false };
 
-  // Send to customer
+  // Send to customer with retry
   const customerEmail = buildSubmissionCreatedEmail(ctx);
-  await sendEmail(customerEmail);
+  try {
+    await withRetry(
+      async () => {
+        const result = await sendEmail(customerEmail);
+        if (!result.success) {
+          throw new Error(result.error || 'Email send failed');
+        }
+        return result;
+      },
+      { maxAttempts: 3, baseDelayMs: 1000, label: "customer" }
+    );
+    results.customerEmailSent = true;
+    logger.info("Customer notification sent", {
+      submissionNumber: submission.submissionNumber,
+      type: "SUBMISSION_CREATED",
+    });
+    metrics.increment("notification.customer.sent");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to send customer notification", {
+      submissionNumber: submission.submissionNumber,
+      error: errorMessage,
+    });
+    await recordFailedNotification(
+      'SUBMISSION_CREATED',
+      ctx.customerEmail,
+      customerEmail.subject,
+      errorMessage,
+      submission.id
+    );
+  }
 
-  // Send to merchant
+  // Send to merchant with retry
   const merchantEmail = buildMerchantNewSubmissionEmail(ctx);
-  await sendEmail(merchantEmail);
+  try {
+    await withRetry(
+      async () => {
+        const result = await sendEmail(merchantEmail);
+        if (!result.success) {
+          throw new Error(result.error || 'Email send failed');
+        }
+        return result;
+      },
+      { maxAttempts: 3, baseDelayMs: 1000, label: "merchant" }
+    );
+    results.merchantEmailSent = true;
+    logger.info("Merchant notification sent", {
+      submissionNumber: submission.submissionNumber,
+      type: "MERCHANT_NEW_SUBMISSION",
+    });
+    metrics.increment("notification.merchant.sent");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to send merchant notification", {
+      submissionNumber: submission.submissionNumber,
+      error: errorMessage,
+    });
+    await recordFailedNotification(
+      'MERCHANT_NEW_SUBMISSION',
+      MERCHANT_EMAIL,
+      merchantEmail.subject,
+      errorMessage,
+      submission.id
+    );
+  }
+
+  return results;
 }
 
 /**

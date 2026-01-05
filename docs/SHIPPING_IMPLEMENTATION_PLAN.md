@@ -1,5 +1,12 @@
 # Shipping & Packing Slip Implementation Plan
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `app/lib/CODE_SYNAPSE.md` → shipping.server.ts, settings.server.ts
+> - `app/routes/ROUTES_SYNAPSE.md` → api.packing-slip.$number.tsx, api.shipping-instructions.$number.tsx
+> - Related plan: `royal-mail-implementation-plan.md` → Royal Mail API integration
+
 ## Current State Summary
 
 ### What's Fully Implemented ✅

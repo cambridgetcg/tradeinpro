@@ -481,12 +481,12 @@ describe("processStoreCreditPayout", () => {
     const result = await processStoreCreditPayout("payout-1", mockAdmin);
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Invalid amount");
+    expect(result.error).toContain("Invalid amount");
     expect(mockPrisma.payout.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: PayoutStatus.FAILED,
-          failureReason: "Invalid amount",
+          failureReason: expect.stringContaining("Invalid amount"),
         }),
       })
     );
@@ -497,6 +497,9 @@ describe("processStoreCreditPayout", () => {
       id: "payout-1",
       type: PayoutType.BANK,
       status: PayoutStatus.PENDING,
+      totalAmount: 5000,
+      submission: { submissionNumber: "TRD-001" },
+      customer: { shopifyCustomerId: null },
     };
 
     mockPrisma.payout.findUnique.mockResolvedValue(mockPayout);
@@ -515,6 +518,9 @@ describe("processStoreCreditPayout", () => {
       id: "payout-1",
       type: PayoutType.STORE_CREDIT,
       status: PayoutStatus.COMPLETED,
+      totalAmount: 5000,
+      submission: { submissionNumber: "TRD-001" },
+      customer: { shopifyCustomerId: null },
     };
 
     mockPrisma.payout.findUnique.mockResolvedValue(mockPayout);

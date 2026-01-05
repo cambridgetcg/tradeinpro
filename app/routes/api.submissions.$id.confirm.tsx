@@ -4,6 +4,8 @@
  * POST /apps/trade-in/submissions/:id/confirm
  *
  * Customer confirms grading results and approves payout
+ *
+ * @synapse ROUTES_SYNAPSE.md - Uses workflow.server.ts for transition validation
  */
 
 import type { ActionFunctionArgs } from "react-router";
@@ -12,7 +14,9 @@ import {
   jsonResponse,
   errorResponse,
 } from "../lib/app-proxy.server";
-import { confirmSubmission, getSubmissionById } from "../lib/submissions.server";
+import { getSubmissionById } from "../lib/submissions.server";
+import { executeTransition } from "../lib/workflow.server";
+import { SubmissionStatus } from "../lib/constants";
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -36,34 +40,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return errorResponse(403, "forbidden", "Not authorized to confirm this submission");
   }
 
-  // Check current status
-  if (submission.status !== "PENDING_APPROVAL") {
+  // Use workflow engine for transition validation and execution
+  const result = await executeTransition({
+    submissionId: id,
+    targetStatus: SubmissionStatus.APPROVED,
+    actorType: "CUSTOMER",
+    actorId: context.internalCustomerId,
+    reason: "Customer confirmed grading offer",
+    shop: context.shop,
+  });
+
+  if (!result.success) {
+    console.error("Confirm submission error:", result.error);
     return errorResponse(
       409,
-      "invalid_status",
-      `Cannot confirm submission with status '${submission.status}'. Must be 'PENDING_APPROVAL'.`
+      "transition_failed",
+      result.error || "Cannot confirm submission in current state"
     );
   }
 
-  try {
-    const updated = await confirmSubmission(id, context.internalCustomerId);
-
-    return jsonResponse({
-      success: true,
-      message: "Submission confirmed. Your payout is being processed.",
-      submission: {
-        id: updated.id,
-        submissionNumber: updated.submissionNumber,
-        status: updated.status,
-        approvedAt: updated.approvedAt?.toISOString(),
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Confirm submission error:", error);
-
-    return errorResponse(400, "confirm_failed", message);
-  }
+  return jsonResponse({
+    success: true,
+    message: "Submission confirmed. Your payout is being processed.",
+    submission: result.submission,
+    sideEffects: result.sideEffectsExecuted,
+  });
 }
 
 // Only POST is supported

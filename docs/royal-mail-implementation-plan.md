@@ -4,6 +4,14 @@
 > **Status:** Planning Complete - Ready for Implementation
 > **API Key:** Configured in Vercel ✓
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `app/lib/CODE_SYNAPSE.md` → shipping.server.ts, royal-mail.server.ts
+> - `app/routes/ROUTES_SYNAPSE.md` → api.submissions.$id.label.tsx, api.cron.tracking.tsx
+> - `../../ShopifyTheme_TCG/assets/ASSETS_SYNAPSE.md` → trade-in-app.js (success page label UI)
+> - Related research: `royal-mail-integration-research.md`
+
 ---
 
 ## Table of Contents

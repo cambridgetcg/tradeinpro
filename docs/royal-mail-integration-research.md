@@ -4,6 +4,13 @@
 > **Purpose:** Evaluate Royal Mail API options for trade-in shipping label generation
 > **Status:** Research Complete
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `app/lib/CODE_SYNAPSE.md` → shipping.server.ts (implementation target)
+> - Related plan: `royal-mail-implementation-plan.md` → Implementation phases
+> - Related plan: `SHIPPING_IMPLEMENTATION_PLAN.md` → Packing slip & instructions
+
 ---
 
 ## Table of Contents

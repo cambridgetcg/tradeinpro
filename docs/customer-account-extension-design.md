@@ -4,6 +4,13 @@
 > **Theme:** Sleek by FoxEcom (v2.1.0)
 > **Last Updated:** 2026-01-01
 
+> **Central Reference:** See [TRADE_IN_SYSTEM_SYNAPSE.md](./TRADE_IN_SYSTEM_SYNAPSE.md) for the complete system architecture, weak links, and unhandled scenarios across both frontend and backend.
+>
+> **Myelin Pathways:**
+> - `extensions/EXTENSIONS_SYNAPSE.md` → trade-in-account extension architecture
+> - `../../ShopifyTheme_TCG/docs/sleek-theme-guide.md` → Theme style context
+> - Related analysis: `OAUTH_IMPLEMENTATION_REVIEW.md` → Session token handling
+
 ---
 
 ## Table of Contents

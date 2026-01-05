@@ -1,6 +1,28 @@
 /**
  * Workflow State Machine for Trade-In Submissions
  * Handles status transitions with validation and business rules
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for full module dependency graph
+ *
+ * EXPORTS:
+ *   - canTransition() - Validate if status change is allowed
+ *   - getNextStatuses() - Get available transitions from current state
+ *   - WORKFLOW_TRANSITIONS - Full state machine definition
+ *
+ * SHOULD BE IMPORTED BY (currently under-utilized):
+ *   - ../routes/api.submissions.$id.confirm.tsx
+ *   - ../routes/api.submissions.$id.reject.tsx
+ *   - ../routes/api.my-submissions.$number.action.tsx
+ *   - ./submissions.server.ts (for internal validation)
+ *
+ * STATUS FLOW:
+ *   DRAFT → SUBMITTED → RECEIVED → GRADING → GRADED → CUSTOMER_REVIEW
+ *                                                 ↓
+ *                                 CONFIRMED → PAYMENT_PENDING → COMPLETED
+ *                                 REJECTED → RETURNED/DISPOSED
+ *
+ * RELATED DOCS:
+ *   - docs/TRADE_IN_SYSTEM_SYNAPSE.md (system architecture)
  */
 
 import {
@@ -12,6 +34,8 @@ import {
   type PayoutStatusType,
   NoteAuthorType,
 } from "./constants";
+import { withTrace, logger, metrics } from "./observability.server";
+import { withDbRetry } from "./db-resilience.server";
 
 // ============================================================================
 // TYPES
@@ -530,4 +554,305 @@ export function calculateAverageStatusDurations(
   }
 
   return averages;
+}
+
+// ============================================================================
+// SIDE EFFECT EXECUTOR
+// ============================================================================
+
+import prisma from "../db.server";
+
+export interface ExecuteTransitionOptions {
+  submissionId: string;
+  targetStatus: SubmissionStatusType;
+  actorType: "CUSTOMER" | "MERCHANT" | "SYSTEM";
+  actorId?: string;
+  reason?: string;
+  shop?: string;
+}
+
+export interface ExecuteTransitionResult {
+  success: boolean;
+  submission?: {
+    id: string;
+    submissionNumber: string;
+    status: string;
+    [key: string]: unknown;
+  };
+  error?: string;
+  sideEffectsExecuted?: string[];
+}
+
+/**
+ * Execute a status transition with full validation and side effects
+ * This is the main entry point for routes to use
+ */
+export async function executeTransition(
+  options: ExecuteTransitionOptions
+): Promise<ExecuteTransitionResult> {
+  const { submissionId, targetStatus, actorType, actorId, reason, shop } = options;
+
+  return withTrace("workflow.transition", {
+    submissionId,
+    targetStatus,
+    actorType,
+  }, async (trace) => {
+    // Fetch current submission state
+    trace.log("Fetching submission state");
+    const submission = await prisma.tradeInSubmission.findUnique({
+      where: { id: submissionId },
+      include: {
+        items: true,
+        customer: true,
+      },
+    });
+
+    if (!submission) {
+      trace.setResult("error");
+      trace.addAttribute("error", "not_found");
+      return { success: false, error: "Submission not found" };
+    }
+
+    trace.addAttribute("currentStatus", submission.status);
+    trace.addAttribute("submissionNumber", submission.submissionNumber);
+
+    // Build context for workflow validation
+    const gradedStatuses: string[] = [ItemStatus.VERIFIED, ItemStatus.ADJUSTED, ItemStatus.REJECTED];
+    const gradedItemsCount = submission.items.filter((item) =>
+      gradedStatuses.includes(item.status)
+    ).length;
+
+    const context: SubmissionContext = {
+      currentStatus: submission.status as SubmissionStatusType,
+      itemsCount: submission.items.length,
+      gradedItemsCount,
+      totalValue: submission.finalTotal ?? submission.quotedTotal ?? 0,
+      requiresApproval: (submission.finalTotal ?? submission.quotedTotal ?? 0) >= 5000, // £50 threshold
+      hasTrackingNumber: !!submission.trackingNumber,
+      allItemsGraded: gradedItemsCount === submission.items.length,
+    };
+
+    // Validate transition
+    trace.log("Validating transition");
+    const transitionResult = attemptTransition(
+      context,
+      targetStatus,
+      actorType === "SYSTEM"
+    );
+
+    if (!transitionResult.allowed) {
+      trace.setResult("error");
+      trace.addAttribute("error", "transition_not_allowed");
+      logger.info("Transition rejected", {
+        submissionId,
+        from: submission.status,
+        to: targetStatus,
+        reason: transitionResult.reason,
+      }, trace.traceId);
+      return {
+        success: false,
+        error: transitionResult.reason ?? "Transition not allowed",
+      };
+    }
+
+    // Execute the transition and side effects in a transaction
+    const executedEffects: string[] = [];
+
+    try {
+      trace.log("Executing transition in transaction");
+      const result = await withDbRetry(
+        () => prisma.$transaction(async (tx) => {
+        // Build update data based on side effects
+        const updateData: Record<string, unknown> = {
+          status: targetStatus,
+        };
+
+        // Process timestamp updates
+        for (const effect of transitionResult.sideEffects ?? []) {
+          if (effect.type === "UPDATE_TIMESTAMP") {
+            const field = effect.payload.field as string;
+            updateData[field] = new Date();
+            executedEffects.push(`UPDATE_TIMESTAMP:${field}`);
+          }
+        }
+
+        // Update submission
+        const updated = await tx.tradeInSubmission.update({
+          where: { id: submissionId },
+          data: updateData,
+        });
+
+        // Process note creation
+        for (const effect of transitionResult.sideEffects ?? []) {
+          if (effect.type === "CREATE_NOTE") {
+            await tx.submissionNote.create({
+              data: {
+                submissionId,
+                authorType: effect.payload.authorType as string,
+                message: reason
+                  ? `${effect.payload.message}. Reason: ${reason}`
+                  : (effect.payload.message as string),
+                isInternal: effect.payload.isInternal as boolean,
+              },
+            });
+            executedEffects.push("CREATE_NOTE");
+          }
+        }
+
+        return updated;
+      }),
+        { label: "workflow-transition", maxRetries: 3 }
+      );
+
+      // Process async side effects outside transaction (notifications, payouts)
+      trace.log("Processing async side effects");
+      for (const effect of transitionResult.sideEffects ?? []) {
+        try {
+          if (effect.type === "SEND_NOTIFICATION") {
+            await executeNotification(submission, effect.payload, shop);
+            executedEffects.push(`SEND_NOTIFICATION:${effect.payload.type}`);
+          } else if (effect.type === "TRIGGER_PAYOUT" && shop) {
+            await executePayout(submissionId, shop, trace.traceId);
+            executedEffects.push("TRIGGER_PAYOUT");
+          }
+        } catch (effectError) {
+          // Log but don't fail the transition for async effects
+          const errorMsg = effectError instanceof Error ? effectError.message : String(effectError);
+          logger.error("Side effect failed", {
+            effectType: effect.type,
+            submissionId,
+            error: errorMsg,
+          }, trace.traceId);
+          executedEffects.push(`${effect.type}:FAILED`);
+        }
+      }
+
+      // Record success metrics
+      metrics.increment(`workflow.transition.${targetStatus.toLowerCase()}`);
+      metrics.increment(`workflow.transition.success`);
+      trace.setResult("success");
+
+      logger.info("Transition completed", {
+        submissionId,
+        from: submission.status,
+        to: targetStatus,
+        effectsExecuted: executedEffects.length,
+      }, trace.traceId);
+
+      return {
+        success: true,
+        submission: {
+          id: result.id,
+          submissionNumber: result.submissionNumber,
+          status: result.status,
+          approvedAt: result.approvedAt?.toISOString(),
+          completedAt: result.completedAt?.toISOString(),
+        },
+        sideEffectsExecuted: executedEffects,
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error("Transition transaction failed", {
+        submissionId,
+        targetStatus,
+        error: errorMsg,
+      }, trace.traceId);
+      trace.setResult("error");
+      metrics.increment("workflow.transition.error");
+      return {
+        success: false,
+        error: errorMsg,
+      };
+    }
+  });
+}
+
+/**
+ * Execute notification side effect
+ */
+async function executeNotification(
+  submission: {
+    id: string;
+    submissionNumber: string;
+    customer: { email: string; firstName?: string | null } | null;
+    items: unknown[];
+    quotedTotal: number | null;
+    finalTotal: number | null;
+  },
+  payload: Record<string, unknown>,
+  shop?: string
+): Promise<void> {
+  const { type, to } = payload;
+
+  // Import notifications dynamically to avoid circular deps
+  const notifications = await import("./notifications.server");
+
+  switch (type) {
+    case "submission_received":
+      if (to === "merchant") {
+        // Merchant notification - could be implemented
+        logger.debug("Merchant notification for new submission", {
+          submissionNumber: submission.submissionNumber,
+        });
+      }
+      break;
+
+    case "package_received":
+      if (submission.customer?.email) {
+        // Use sendSubmissionReceivedNotification for package received
+        await notifications.sendSubmissionReceivedNotification?.(submission as never);
+      }
+      break;
+
+    case "grading_complete":
+      if (submission.customer?.email) {
+        await notifications.sendGradingCompleteNotification?.(submission as never);
+      }
+      break;
+
+    case "payout_complete":
+      if (submission.customer?.email) {
+        // Use sendPayoutIssuedNotification for payout complete
+        const payoutInfo = {
+          totalAmount: submission.finalTotal ?? submission.quotedTotal ?? 0,
+        };
+        await notifications.sendPayoutIssuedNotification?.(submission as never, payoutInfo);
+      }
+      break;
+
+    case "submission_cancelled":
+      // Cancellation notification not implemented yet
+      logger.debug("Cancellation notification requested", {
+        submissionNumber: submission.submissionNumber,
+      });
+      break;
+
+    case "items_returned":
+      if (submission.customer?.email) {
+        await notifications.sendReturnRequestedNotification?.(submission as never, "Your cards are being returned.");
+      }
+      break;
+
+    default:
+      logger.warn("Unknown notification type", { type: String(type) });
+  }
+}
+
+/**
+ * Execute payout side effect
+ */
+async function executePayout(submissionId: string, shop: string, traceId?: string): Promise<void> {
+  const payouts = await import("./payouts.server");
+
+  const result = await payouts.createPayout(shop, submissionId);
+
+  if (!result.success) {
+    logger.error("Payout creation failed", {
+      submissionId,
+      error: result.error,
+    }, traceId);
+    throw new Error(result.error ?? "Payout creation failed");
+  }
+
+  logger.info("Payout created", { submissionId }, traceId);
 }
