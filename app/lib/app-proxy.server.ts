@@ -5,11 +5,37 @@
  *
  * @see https://shopify.dev/docs/apps/online-store/app-proxies
  * @see https://shopify.dev/docs/api/customer-account-ui-extensions/apis/session-token
+ *
+ * @synapse CODE_SYNAPSE.md - See ./CODE_SYNAPSE.md for full module dependency graph
+ *
+ * AUTHENTICATION METHODS:
+ *   1. App Proxy - HMAC signature validation (Theme requests)
+ *   2. Session Token - JWT validation (Customer Account UI Extensions)
+ *
+ * IMPORTED BY:
+ *   - ../routes/api.storefront.$.tsx (validateAppProxy - entry point)
+ *   - ../routes/api.my-submissions.tsx (requireCustomer)
+ *   - ../routes/api.my-submissions.$number.tsx (requireCustomer)
+ *   - ../routes/api.my-submissions.$number.action.tsx (requireCustomer)
+ *   - ../routes/api.track.tsx (requireAppProxy)
+ *   - ../routes/api.submissions.tsx (optionalCustomer)
+ *
+ * EXTENSION INTEGRATION:
+ *   - extensions/trade-in-account/src/hooks/useSessionToken.ts (token provider)
+ *   - extensions/trade-in-account/src/api/client.ts (sends Bearer token)
+ *   - extensions/trade-in-blocks/assets/trade-in-account.js (sends X-Customer-Email)
+ *
+ * RELATED DOCS:
+ *   - docs/MY_SUBMISSIONS_FLOW_INVESTIGATION.md (auth flow details)
+ *   - docs/OAUTH_IMPLEMENTATION_REVIEW.md (JWT implementation)
+ *   - docs/trade-in-history-extension-analysis.md (customer linking)
  */
 
 import crypto from "crypto";
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
+import { shopifyAdminCircuitBreaker, CircuitOpenError } from "./circuit-breaker.server";
+import { withTrace, logger, metrics } from "./observability.server";
 
 // ============================================================================
 // Types
@@ -115,78 +141,84 @@ function verifyJwtSignature(
  * @returns Decoded claims if valid, null if invalid
  */
 export function validateSessionToken(token: string): SessionTokenClaims | null {
-  console.log("[validateSessionToken] Starting validation");
+  logger.debug("Validating session token");
 
   const secret = process.env.SHOPIFY_API_SECRET;
   if (!secret) {
-    console.error("[validateSessionToken] SHOPIFY_API_SECRET not configured");
+    logger.error("Session token validation failed: SHOPIFY_API_SECRET not configured");
     return null;
   }
-  console.log("[validateSessionToken] API_SECRET present (length:", secret.length, ")");
 
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) {
-    console.error("[validateSessionToken] SHOPIFY_API_KEY not configured");
+    logger.error("Session token validation failed: SHOPIFY_API_KEY not configured");
     return null;
   }
-  console.log("[validateSessionToken] API_KEY:", clientId);
 
   try {
     // Split JWT into parts
     const parts = token.split(".");
     if (parts.length !== 3) {
-      console.warn("[validateSessionToken] Invalid JWT format, parts:", parts.length);
+      logger.warn("Session token invalid: wrong number of JWT parts", { parts: parts.length });
       return null;
     }
 
     const [headerB64, payloadB64, signatureB64] = parts;
 
-    // Decode payload first to log the claims for debugging
+    // Decode payload first
     const payloadJson = base64UrlDecode(payloadB64);
     const claims = JSON.parse(payloadJson) as SessionTokenClaims;
-    console.log("[validateSessionToken] Token claims:", {
+    logger.debug("Session token claims decoded", {
       dest: claims.dest,
       aud: claims.aud,
-      sub: claims.sub,
-      exp: new Date(claims.exp * 1000).toISOString(),
-      nbf: new Date(claims.nbf * 1000).toISOString(),
-      iat: new Date(claims.iat * 1000).toISOString(),
+      hasSub: !!claims.sub,
     });
 
     // Verify signature
     const signatureValid = verifyJwtSignature(headerB64, payloadB64, signatureB64, secret);
-    console.log("[validateSessionToken] Signature verification:", signatureValid ? "PASSED" : "FAILED");
     if (!signatureValid) {
-      console.warn("[validateSessionToken] Session token signature verification failed");
+      logger.warn("Session token signature verification failed");
+      metrics.increment("auth.session_token.signature_failed");
       return null;
     }
 
     // Verify audience matches our client ID
     if (claims.aud !== clientId) {
-      console.warn(`[validateSessionToken] Audience mismatch: expected ${clientId}, got ${claims.aud}`);
+      logger.warn("Session token audience mismatch", {
+        expected: clientId,
+        actual: claims.aud,
+      });
+      metrics.increment("auth.session_token.audience_mismatch");
       return null;
     }
-    console.log("[validateSessionToken] Audience check: PASSED");
 
     // Check expiration
     const now = Math.floor(Date.now() / 1000);
     if (claims.exp < now) {
-      console.warn("[validateSessionToken] Token expired at", new Date(claims.exp * 1000).toISOString());
+      logger.warn("Session token expired", {
+        expiredAt: new Date(claims.exp * 1000).toISOString(),
+      });
+      metrics.increment("auth.session_token.expired");
       return null;
     }
-    console.log("[validateSessionToken] Expiration check: PASSED (expires in", claims.exp - now, "seconds)");
 
     // Check not-before
     if (claims.nbf > now) {
-      console.warn("[validateSessionToken] Token not yet valid until", new Date(claims.nbf * 1000).toISOString());
+      logger.warn("Session token not yet valid", {
+        validFrom: new Date(claims.nbf * 1000).toISOString(),
+      });
+      metrics.increment("auth.session_token.not_yet_valid");
       return null;
     }
-    console.log("[validateSessionToken] NBF check: PASSED");
 
-    console.log("[validateSessionToken] All checks passed, token is valid");
+    logger.debug("Session token validation passed", { hasSub: !!claims.sub });
+    metrics.increment("auth.session_token.valid");
     return claims;
   } catch (error) {
-    console.error("[validateSessionToken] Failed to validate session token:", error);
+    logger.error("Session token validation error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    metrics.increment("auth.session_token.error");
     return null;
   }
 }
@@ -246,14 +278,18 @@ export function validateAppProxy(request: Request): AppProxyContext {
   const requestTime = parseInt(timestamp, 10);
   const now = Math.floor(Date.now() / 1000);
   if (isNaN(requestTime) || Math.abs(now - requestTime) > 300) {
-    console.warn("App Proxy request timestamp invalid or expired");
+    logger.warn("App Proxy request timestamp invalid or expired", {
+      requestTime,
+      now,
+      diff: Math.abs(now - requestTime),
+    });
     return context;
   }
 
   // Get API secret
   const secret = process.env.SHOPIFY_API_SECRET;
   if (!secret) {
-    console.error("SHOPIFY_API_SECRET not configured");
+    logger.error("App Proxy validation failed: SHOPIFY_API_SECRET not configured");
     return context;
   }
 
@@ -280,11 +316,13 @@ export function validateAppProxy(request: Request): AppProxyContext {
       signatureBuffer.length !== expectedBuffer.length ||
       !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
     ) {
-      console.warn("App Proxy signature mismatch");
+      logger.warn("App Proxy signature mismatch", { shop });
+      metrics.increment("auth.app_proxy.signature_mismatch");
       return context;
     }
   } catch {
-    console.warn("App Proxy signature comparison failed");
+    logger.warn("App Proxy signature comparison failed", { shop });
+    metrics.increment("auth.app_proxy.comparison_error");
     return context;
   }
 
@@ -339,11 +377,11 @@ export async function requireCustomer(
   let pathPrefix = "";
   let authMethod: "app_proxy" | "session_token" = "app_proxy";
 
-  console.log("[requireCustomer] Starting authentication check");
+  logger.debug("Customer authentication check started");
 
   // First, try App Proxy validation (traditional method)
   const appProxyContext = validateAppProxy(request);
-  console.log("[requireCustomer] App Proxy validation result:", {
+  logger.debug("App Proxy validation result", {
     isValid: appProxyContext.isValid,
     hasCustomerId: !!appProxyContext.customerId,
     shop: appProxyContext.shop,
@@ -357,21 +395,14 @@ export async function requireCustomer(
     timestamp = appProxyContext.timestamp;
     pathPrefix = appProxyContext.path_prefix;
     authMethod = "app_proxy";
-    console.log("[requireCustomer] Using App Proxy auth, customerId:", shopifyCustomerId);
+    logger.debug("Using App Proxy auth", { customerId: shopifyCustomerId });
   } else {
     // Try Session Token authentication (for Customer Account UI Extensions)
     const bearerToken = extractBearerToken(request);
-    console.log("[requireCustomer] Trying Session Token auth, hasToken:", !!bearerToken);
+    logger.debug("Trying Session Token auth", { hasToken: !!bearerToken });
 
     if (bearerToken) {
-      console.log("[requireCustomer] Bearer token (first 50 chars):", bearerToken.substring(0, 50));
       const claims = validateSessionToken(bearerToken);
-      console.log("[requireCustomer] Session Token validation result:", claims ? {
-        dest: claims.dest,
-        aud: claims.aud,
-        sub: claims.sub,
-        exp: new Date(claims.exp * 1000).toISOString(),
-      } : "null (invalid token)");
 
       if (claims) {
         // Session token is valid
@@ -380,18 +411,21 @@ export async function requireCustomer(
           shopifyCustomerId = extractCustomerIdFromSub(claims.sub);
           shop = claims.dest;
           authMethod = "session_token";
-          console.log("[requireCustomer] Extracted customer ID:", shopifyCustomerId, "from sub:", claims.sub);
+          logger.debug("Session Token auth successful", {
+            customerId: shopifyCustomerId,
+            hasSub: true,
+          });
 
           if (!shopifyCustomerId) {
-            console.warn(`[requireCustomer] Failed to parse customer ID from sub claim: ${claims.sub}`);
+            logger.warn("Failed to parse customer ID from sub claim", { sub: claims.sub });
           }
         } else {
           // Token valid but no customer ID (customer not logged in or no permission)
-          console.warn("[requireCustomer] Session token valid but no 'sub' claim - customer may not be logged in");
+          logger.warn("Session token valid but no sub claim - customer may not be logged in");
         }
       }
     } else {
-      console.log("[requireCustomer] No Bearer token in Authorization header");
+      logger.debug("No Bearer token in Authorization header");
     }
 
     // If App Proxy signature exists but is invalid, and no valid session token, reject
@@ -399,7 +433,8 @@ export async function requireCustomer(
     const hasAppProxyParams = url.searchParams.get("signature") !== null;
 
     if (hasAppProxyParams && !appProxyContext.isValid && !shopifyCustomerId) {
-      console.warn("[requireCustomer] App Proxy params exist but invalid, no session token");
+      logger.warn("Auth failed: App Proxy params exist but invalid, no session token");
+      metrics.increment("auth.customer.failed");
       throw new Response(
         JSON.stringify({ error: "unauthorized", message: "Invalid request signature" }),
         {
@@ -412,7 +447,8 @@ export async function requireCustomer(
 
   // Require customer to be logged in
   if (!shopifyCustomerId) {
-    console.warn("[requireCustomer] No customer ID found from any auth method");
+    logger.warn("Auth failed: No customer ID found from any auth method");
+    metrics.increment("auth.customer.login_required");
     throw new Response(
       JSON.stringify({ error: "login_required", message: "Customer login required" }),
       {
@@ -422,22 +458,31 @@ export async function requireCustomer(
     );
   }
 
-  console.log("[requireCustomer] Auth successful via", authMethod, "customerId:", shopifyCustomerId);
+  logger.info("Customer authenticated", { method: authMethod, customerId: shopifyCustomerId });
+  metrics.increment(`auth.customer.success.${authMethod}`);
 
   // Find or create internal customer record
+  logger.info("[DEBUG] Looking up customer by Shopify ID", { shopifyCustomerId });
   let customer = await findCustomerByShopifyId(shopifyCustomerId);
+  logger.info("[DEBUG] findCustomerByShopifyId result", {
+    found: !!customer,
+    customerId: customer?.id,
+    email: customer?.email
+  });
 
   if (!customer) {
     // Customer not found by Shopify ID - they may have submitted as a guest before
     // Try to find and link by email
-    console.log(`[requireCustomer] Customer not found by Shopify ID ${shopifyCustomerId}, attempting to link by email`);
+    logger.debug("Customer not found by Shopify ID, attempting to link by email", {
+      shopifyCustomerId,
+    });
 
     // Step 1: Check if email was provided via header (for backwards compatibility)
     let customerEmail = request.headers.get("X-Customer-Email")?.toLowerCase().trim();
 
     // Step 2: If no header, fetch email from Shopify Admin API
     if (!customerEmail || !customerEmail.includes("@") || customerEmail.endsWith("@pending.local")) {
-      console.log("[requireCustomer] No email header, fetching from Shopify API...");
+      logger.debug("No email header, fetching from Shopify API");
       customerEmail = await getShopifyCustomerEmail(shop, shopifyCustomerId) || undefined;
     }
 
@@ -453,15 +498,22 @@ export async function requireCustomer(
           where: { id: existingByEmail.id },
           data: { shopifyCustomerId },
         });
-        console.log(`[requireCustomer] ✓ Linked guest customer ${existingByEmail.id} (${customerEmail}) with Shopify ID ${shopifyCustomerId}`);
+        logger.info("Linked guest customer with Shopify ID", {
+          customerId: existingByEmail.id,
+          shopifyCustomerId,
+        });
+        metrics.increment("customer.linked_guest");
       } else if (existingByEmail && existingByEmail.shopifyCustomerId === shopifyCustomerId) {
         // Already linked (shouldn't happen, but handle gracefully)
         customer = existingByEmail;
-        console.log(`[requireCustomer] Customer ${customerEmail} already linked to Shopify ID ${shopifyCustomerId}`);
+        logger.debug("Customer already linked to Shopify ID", { shopifyCustomerId });
       } else if (existingByEmail) {
         // Customer exists but has different Shopify ID - edge case
         // This could happen if same email is used by different Shopify accounts
-        console.warn(`[requireCustomer] Customer ${customerEmail} exists with different Shopify ID (${existingByEmail.shopifyCustomerId}), creating new record`);
+        logger.warn("Customer exists with different Shopify ID, creating new record", {
+          existingShopifyId: existingByEmail.shopifyCustomerId,
+          newShopifyId: shopifyCustomerId,
+        });
         // Don't use this customer - fall through to create new one
       }
     }
@@ -475,12 +527,19 @@ export async function requireCustomer(
             email: customerEmail || `shopify-${shopifyCustomerId}@pending.local`, // Use real email if available
           },
         });
-        console.log(`[requireCustomer] Created new customer record for Shopify ID: ${shopifyCustomerId}, email: ${customerEmail || 'pending'}`);
+        logger.info("Created new customer record", {
+          shopifyCustomerId,
+          hasEmail: !!customerEmail,
+        });
+        metrics.increment("customer.created");
       } catch (error) {
         // Handle race condition - another request might have created it
         customer = await findCustomerByShopifyId(shopifyCustomerId);
         if (!customer) {
-          console.error("Failed to create customer record:", error);
+          logger.error("Failed to create customer record", {
+            shopifyCustomerId,
+            error: error instanceof Error ? error.message : String(error),
+          });
           throw new Response(
             JSON.stringify({ error: "customer_creation_failed", message: "Unable to create customer record" }),
             {
@@ -492,6 +551,12 @@ export async function requireCustomer(
       }
     }
   }
+
+  logger.info("[DEBUG] requireCustomer returning", {
+    shopifyCustomerId,
+    internalCustomerId: customer.id,
+    customerEmail: customer.email,
+  });
 
   return {
     shop,
@@ -538,6 +603,7 @@ const GET_CUSTOMER_EMAIL_QUERY = `#graphql
 /**
  * Fetch customer email from Shopify Admin API
  * Uses offline access token stored in session
+ * Protected by circuit breaker to prevent cascading failures
  *
  * @param shop - Shopify shop domain
  * @param shopifyCustomerId - Numeric Shopify customer ID
@@ -551,37 +617,68 @@ export async function getShopifyCustomerEmail(
     return null;
   }
 
-  try {
-    // Get admin API access using offline token
-    const { admin } = await unauthenticated.admin(shop);
+  return withTrace("shopify.getCustomerEmail", {
+    shop,
+    customerId: shopifyCustomerId,
+  }, async (trace) => {
+    try {
+      // Circuit breaker protects against Shopify Admin API failures
+      const email = await shopifyAdminCircuitBreaker.execute(
+        async () => {
+          trace.log("Fetching admin API access");
+          const { admin } = await unauthenticated.admin(shop);
 
-    const response = await admin.graphql(GET_CUSTOMER_EMAIL_QUERY, {
-      variables: {
-        id: `gid://shopify/Customer/${shopifyCustomerId}`,
-      },
-    });
+          trace.log("Querying customer email");
+          const response = await admin.graphql(GET_CUSTOMER_EMAIL_QUERY, {
+            variables: {
+              id: `gid://shopify/Customer/${shopifyCustomerId}`,
+            },
+          });
 
-    const data = await response.json();
-    const email = data?.data?.customer?.email;
-
-    if (email) {
-      console.log(
-        `[getShopifyCustomerEmail] Found email for Shopify customer ${shopifyCustomerId}: ${email}`
+          const data = await response.json();
+          return data?.data?.customer?.email as string | null;
+        },
+        () => null // Fallback returns null if circuit is open
       );
-      return email.toLowerCase();
-    }
 
-    console.log(
-      `[getShopifyCustomerEmail] No email found for Shopify customer ${shopifyCustomerId}`
-    );
-    return null;
-  } catch (error) {
-    console.error(
-      `[getShopifyCustomerEmail] Failed to fetch email for customer ${shopifyCustomerId}:`,
-      error
-    );
-    return null;
-  }
+      if (email) {
+        trace.setResult("success");
+        trace.addAttribute("found", true);
+        metrics.increment("shopify.customer.email.found");
+        logger.debug("Shopify customer email found", {
+          customerId: shopifyCustomerId,
+          emailDomain: email.split("@")[1] || "unknown",
+        });
+        return email.toLowerCase();
+      }
+
+      trace.setResult("success");
+      trace.addAttribute("found", false);
+      metrics.increment("shopify.customer.email.not_found");
+      logger.debug("Shopify customer email not found", {
+        customerId: shopifyCustomerId,
+      });
+      return null;
+    } catch (error) {
+      trace.setResult("error");
+      const isCircuitOpen = error instanceof CircuitOpenError;
+      trace.addAttribute("circuitOpen", isCircuitOpen);
+
+      if (isCircuitOpen) {
+        metrics.increment("shopify.customer.email.circuit_open");
+        logger.warn("Shopify Admin API circuit open, skipping email fetch", {
+          customerId: shopifyCustomerId,
+        });
+      } else {
+        metrics.increment("shopify.customer.email.error");
+        logger.error("Failed to fetch Shopify customer email", {
+          customerId: shopifyCustomerId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return null;
+    }
+  });
 }
 
 // ============================================================================
