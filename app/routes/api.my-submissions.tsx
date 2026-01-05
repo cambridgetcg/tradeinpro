@@ -192,6 +192,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
     console.log('[my-submissions] Customer total submissions (no status filter):', allSubmissionsCount);
 
+    // Debug: Check if customer exists in this database
+    const customerCheck = await prisma.customer.findUnique({
+      where: { id: context.internalCustomerId }
+    });
+    console.log('[my-submissions] Customer exists in DB:', !!customerCheck);
+
+    // Debug: Count all submissions in database
+    const totalSubmissionsInDb = await prisma.tradeInSubmission.count();
+    console.log('[my-submissions] Total submissions in entire database:', totalSubmissionsInDb);
+
     // Debug: Log query results
     console.log('[my-submissions] Query results:', {
       customerId: context.internalCustomerId,
@@ -246,7 +256,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         submissionsFound: submissions.length,
         total,
         allSubmissionsCount, // Without status filter
-        whereClause: where,
+        customerExistsInDb: !!customerCheck,
+        totalSubmissionsInDb,
+        dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
       },
     };
 
