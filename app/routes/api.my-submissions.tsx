@@ -89,6 +89,15 @@ const COMPLETED_STATUSES = [SubmissionStatus.COMPLETED];
 // ============================================================================
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  // Debug: Log request info
+  const url = new URL(request.url);
+  console.log('[my-submissions] Request received:', {
+    url: url.pathname,
+    hasSignature: url.searchParams.has('signature'),
+    hasLoggedInCustomerId: url.searchParams.has('logged_in_customer_id'),
+    loggedInCustomerId: url.searchParams.get('logged_in_customer_id'),
+  });
+
   // Require logged-in customer
   let context;
   try {
@@ -120,7 +129,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const url = new URL(request.url);
+  // Debug: Log customer context
+  console.log('[my-submissions] Customer context:', {
+    shopifyCustomerId: context.customerId,
+    internalCustomerId: context.internalCustomerId,
+    shop: context.shop,
+  });
+
   const page = parsePositiveInt(url.searchParams.get("page"), 1);
   const limit = Math.min(parsePositiveInt(url.searchParams.get("limit"), 20), 50);
   const status = url.searchParams.get("status"); // Optional filter
@@ -167,6 +182,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // Calculate stats for this customer (all submissions, not filtered)
       calculateCustomerStats(context.internalCustomerId),
     ]);
+
+    // Debug: Log query results
+    console.log('[my-submissions] Query results:', {
+      customerId: context.internalCustomerId,
+      submissionsFound: submissions.length,
+      total,
+      stats,
+    });
 
     // Format response
     const formattedSubmissions: SubmissionSummary[] = submissions.map((sub) => ({
