@@ -259,6 +259,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         customerExistsInDb: !!customerCheck,
         totalSubmissionsInDb,
         dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
+        dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
       },
     };
 
