@@ -165,6 +165,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       where.status = { in: [...PENDING_STATUSES, ...COMPLETED_STATUSES, SubmissionStatus.CANCELLED, SubmissionStatus.RETURNED] };
     }
 
+    // Debug: Log the exact where clause
+    console.log('[my-submissions] Query where clause:', JSON.stringify(where));
+
     // Fetch submissions with pagination
     const [submissions, total, stats] = await Promise.all([
       prisma.tradeInSubmission.findMany({
@@ -182,6 +185,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // Calculate stats for this customer (all submissions, not filtered)
       calculateCustomerStats(context.internalCustomerId),
     ]);
+
+    // Debug: Also query without status filter to see if customer has any submissions at all
+    const allSubmissionsCount = await prisma.tradeInSubmission.count({
+      where: { customerId: context.internalCustomerId }
+    });
+    console.log('[my-submissions] Customer total submissions (no status filter):', allSubmissionsCount);
 
     // Debug: Log query results
     console.log('[my-submissions] Query results:', {
@@ -236,6 +245,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         internalCustomerId: context.internalCustomerId,
         submissionsFound: submissions.length,
         total,
+        allSubmissionsCount, // Without status filter
+        whereClause: where,
       },
     };
 
