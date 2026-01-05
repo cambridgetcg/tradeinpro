@@ -89,14 +89,7 @@ const COMPLETED_STATUSES = [SubmissionStatus.COMPLETED];
 // ============================================================================
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Debug: Log request info
   const url = new URL(request.url);
-  console.log('[my-submissions] Request received:', {
-    url: url.pathname,
-    hasSignature: url.searchParams.has('signature'),
-    hasLoggedInCustomerId: url.searchParams.has('logged_in_customer_id'),
-    loggedInCustomerId: url.searchParams.get('logged_in_customer_id'),
-  });
 
   // Require logged-in customer
   let context;
@@ -105,7 +98,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   } catch (response) {
     // In development, allow bypassing auth for testing
     if (process.env.NODE_ENV !== "production") {
-      const url = new URL(request.url);
       const testCustomerId = url.searchParams.get("_test_customer_id");
       if (testCustomerId) {
         const customer = await prisma.customer.findUnique({
@@ -128,13 +120,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return response as Response;
     }
   }
-
-  // Debug: Log customer context
-  console.log('[my-submissions] Customer context:', {
-    shopifyCustomerId: context.customerId,
-    internalCustomerId: context.internalCustomerId,
-    shop: context.shop,
-  });
 
   const page = parsePositiveInt(url.searchParams.get("page"), 1);
   const limit = Math.min(parsePositiveInt(url.searchParams.get("limit"), 20), 50);
@@ -165,9 +150,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       where.status = { in: [...PENDING_STATUSES, ...COMPLETED_STATUSES, SubmissionStatus.CANCELLED, SubmissionStatus.RETURNED] };
     }
 
-    // Debug: Log the exact where clause
-    console.log('[my-submissions] Query where clause:', JSON.stringify(where));
-
     // Fetch submissions with pagination
     const [submissions, total, stats] = await Promise.all([
       prisma.tradeInSubmission.findMany({
@@ -185,58 +167,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       // Calculate stats for this customer (all submissions, not filtered)
       calculateCustomerStats(context.internalCustomerId),
     ]);
-
-    // Debug: Also query without status filter to see if customer has any submissions at all
-    const allSubmissionsCount = await prisma.tradeInSubmission.count({
-      where: { customerId: context.internalCustomerId }
-    });
-    console.log('[my-submissions] Customer total submissions (no status filter):', allSubmissionsCount);
-
-    // Debug: Check if customer exists in this database
-    const customerCheck = await prisma.customer.findUnique({
-      where: { id: context.internalCustomerId }
-    });
-    console.log('[my-submissions] Customer exists in DB:', !!customerCheck);
-
-    // Debug: Count all submissions in database
-    const totalSubmissionsInDb = await prisma.tradeInSubmission.count();
-    console.log('[my-submissions] Total submissions in entire database:', totalSubmissionsInDb);
-
-    // Debug: Check what tables exist by counting records
-    const totalCustomers = await prisma.customer.count();
-    const totalCards = await prisma.cardPriceV2.count();
-    console.log('[my-submissions] Total customers:', totalCustomers, 'Total cards:', totalCards);
-
-    // Debug: Raw SQL to check tables in ALL schemas
-    let tableCheck: any[] = [];
-    let dbConnectionTest = "unknown";
-    let currentSchema = "unknown";
-    try {
-      // Test basic connection
-      const testResult = await prisma.$queryRaw`SELECT current_database() as db, current_schema() as schema, current_user as user`;
-      const test = (testResult as any[])[0];
-      dbConnectionTest = `db=${test.db}, schema=${test.schema}, user=${test.user}`;
-      currentSchema = test.schema;
-
-      tableCheck = await prisma.$queryRaw`
-        SELECT table_schema, table_name
-        FROM information_schema.tables
-        WHERE table_type = 'BASE TABLE'
-        AND table_schema NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY table_schema, table_name
-      ` as any[];
-    } catch (err: any) {
-      dbConnectionTest = `ERROR: ${err.message}`;
-    }
-    console.log('[my-submissions] All tables in database:', tableCheck, 'Connection:', dbConnectionTest);
-
-    // Debug: Log query results
-    console.log('[my-submissions] Query results:', {
-      customerId: context.internalCustomerId,
-      submissionsFound: submissions.length,
-      total,
-      stats,
-    });
 
     // Format response
     const formattedSubmissions: SubmissionSummary[] = submissions.map((sub) => ({
@@ -267,7 +197,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const totalPages = Math.ceil(total / limit);
 
-    const response: CustomerSubmissionsResponse & { _debug?: any } = {
+    const response: CustomerSubmissionsResponse = {
       submissions: formattedSubmissions,
       stats,
       pagination: {
@@ -276,25 +206,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
         total,
         totalPages,
         hasMore: page < totalPages,
-      },
-      // Debug info - REMOVE AFTER DEBUGGING
-      _debug: {
-        shopifyCustomerId: context.customerId,
-        internalCustomerId: context.internalCustomerId,
-        submissionsFound: submissions.length,
-        total,
-        allSubmissionsCount, // Without status filter
-        customerExistsInDb: !!customerCheck,
-        totalSubmissionsInDb,
-        totalCustomers,
-        totalCards,
-        tablesInDb: tableCheck.map((t: any) => `${t.table_schema}.${t.table_name}`),
-        dbConnectionTest,
-        currentSchema,
-        dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
-        dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
-        dbSchema: process.env.DATABASE_URL?.match(/schema=([^&]+)/)?.[1] || "public (default)",
-        fullDbUrl: process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':***@') || "not set", // Mask password
       },
     };
 
@@ -306,11 +217,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 // ============================================================================
-// Helpers
+// Stats Calculation
 // ============================================================================
 
 async function calculateCustomerStats(customerId: string): Promise<CustomerStats> {
-  const [total, pending, completed, earnings] = await Promise.all([
+  const [total, pending, completed, totalEarned] = await Promise.all([
     // Total submissions (excluding drafts)
     prisma.tradeInSubmission.count({
       where: {
@@ -319,7 +230,7 @@ async function calculateCustomerStats(customerId: string): Promise<CustomerStats
       },
     }),
 
-    // Pending submissions
+    // Pending (active) submissions
     prisma.tradeInSubmission.count({
       where: {
         customerId,
@@ -335,7 +246,7 @@ async function calculateCustomerStats(customerId: string): Promise<CustomerStats
       },
     }),
 
-    // Total earned from completed submissions
+    // Total earned (sum of finalTotal for completed submissions)
     prisma.tradeInSubmission.aggregate({
       where: {
         customerId,
@@ -343,23 +254,14 @@ async function calculateCustomerStats(customerId: string): Promise<CustomerStats
       },
       _sum: {
         finalTotal: true,
-        bonusAmount: true,
       },
     }),
   ]);
-
-  const totalEarned =
-    (earnings._sum.finalTotal || 0) + (earnings._sum.bonusAmount || 0);
 
   return {
     total,
     pending,
     completed,
-    totalEarned,
+    totalEarned: totalEarned._sum.finalTotal || 0,
   };
-}
-
-// Only GET is supported
-export async function action() {
-  return errorResponse(405, "method_not_allowed", "Only GET requests are supported");
 }

@@ -462,13 +462,7 @@ export async function requireCustomer(
   metrics.increment(`auth.customer.success.${authMethod}`);
 
   // Find or create internal customer record
-  logger.info("[DEBUG] Looking up customer by Shopify ID", { shopifyCustomerId });
   let customer = await findCustomerByShopifyId(shopifyCustomerId);
-  logger.info("[DEBUG] findCustomerByShopifyId result", {
-    found: !!customer,
-    customerId: customer?.id,
-    email: customer?.email
-  });
 
   if (!customer) {
     // Customer not found by Shopify ID - they may have submitted as a guest before
@@ -551,12 +545,6 @@ export async function requireCustomer(
       }
     }
   }
-
-  logger.info("[DEBUG] requireCustomer returning", {
-    shopifyCustomerId,
-    internalCustomerId: customer.id,
-    customerEmail: customer.email,
-  });
 
   return {
     shop,
