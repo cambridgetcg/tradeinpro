@@ -202,6 +202,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const totalSubmissionsInDb = await prisma.tradeInSubmission.count();
     console.log('[my-submissions] Total submissions in entire database:', totalSubmissionsInDb);
 
+    // Debug: Check what tables exist by counting records
+    const totalCustomers = await prisma.customer.count();
+    const totalCards = await prisma.cardPriceV2.count();
+    console.log('[my-submissions] Total customers:', totalCustomers, 'Total cards:', totalCards);
+
     // Debug: Log query results
     console.log('[my-submissions] Query results:', {
       customerId: context.internalCustomerId,
@@ -258,6 +263,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         allSubmissionsCount, // Without status filter
         customerExistsInDb: !!customerCheck,
         totalSubmissionsInDb,
+        totalCustomers,
+        totalCards,
         dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
         dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
       },
