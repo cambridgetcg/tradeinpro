@@ -25,8 +25,8 @@ import {
 
 // Import handlers from existing API routes
 import { loader as trackLoader } from "./api.track";
-import { loader as cardsSearchLoader } from "./api.cards.search";
-import { loader as cardsBrowseLoader } from "./api.cards.browse";
+import { loader as cardsLookupLoader } from "./api.cards.lookup";
+import { loader as cardsCatalogLoader } from "./api.cards.catalog";
 import { loader as cardsSetsLoader } from "./api.cards.sets";
 import { loader as cardsGamesLoader } from "./api.cards.games";
 import { loader as cardsLanguagesLoader } from "./api.cards.languages";
@@ -68,16 +68,16 @@ function matchRoute(
     return { handler: trackLoader };
   }
 
-  // Card search
-  // GET /cards/search
-  if (segments[0] === "cards" && segments[1] === "search" && method === "GET") {
-    return { handler: cardsSearchLoader };
+  // Card lookup (renamed from search to avoid Shopify reserved path)
+  // GET /cards/lookup
+  if (segments[0] === "cards" && segments[1] === "lookup" && method === "GET") {
+    return { handler: cardsLookupLoader };
   }
 
-  // Card browse
-  // GET /cards/browse
-  if (segments[0] === "cards" && segments[1] === "browse" && method === "GET") {
-    return { handler: cardsBrowseLoader };
+  // Card catalog (renamed from browse to avoid Shopify reserved path)
+  // GET /cards/catalog
+  if (segments[0] === "cards" && segments[1] === "catalog" && method === "GET") {
+    return { handler: cardsCatalogLoader };
   }
 
   // Card sets

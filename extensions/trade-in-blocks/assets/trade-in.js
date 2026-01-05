@@ -188,7 +188,7 @@
     if (setCode) params.append("set", setCode);
 
     try {
-      const response = await fetch(`${elements.apiBase}/cards/search?${params}`);
+      const response = await fetch(`${elements.apiBase}/cards/lookup?${params}`);
       if (!response.ok) throw new Error("Search failed");
       const data = await response.json();
       return data.results || [];
@@ -207,7 +207,7 @@
     if (setCode) params.append("set", setCode);
 
     try {
-      const response = await fetch(`${elements.apiBase}/cards/browse?${params}`);
+      const response = await fetch(`${elements.apiBase}/cards/catalog?${params}`);
       if (!response.ok) throw new Error("Browse failed");
       return await response.json();
     } catch (error) {

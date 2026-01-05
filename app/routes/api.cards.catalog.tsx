@@ -1,10 +1,13 @@
 /**
- * Card Browse API
+ * Card Catalog API (renamed from browse to avoid Shopify reserved path)
  *
- * GET /apps/trade-in/cards/browse
+ * GET /apps/trade-in/cards/catalog
  *
  * Public endpoint (via App Proxy) for browsing cards with images.
  * Queries CardPriceV2 directly for real-time market prices and images.
+ *
+ * NOTE: Route renamed from /cards/browse to /cards/catalog because
+ * Shopify intercepts URLs containing "browse" as a reserved path.
  */
 
 import type { LoaderFunctionArgs } from "react-router";
@@ -175,7 +178,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           imageUrl: true,
           bestPriceGbp: true,
           tradeinPriceGbp: true,
-          updatedAt: true, // For freshness check
+          lastUpdated: true, // For freshness check
         },
       }),
       // Get unique sets for filter dropdown
@@ -197,9 +200,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     let oldestUpdate: Date | null = null;
 
     for (const card of cards) {
-      if (card.updatedAt) {
-        if (!oldestUpdate || card.updatedAt < oldestUpdate) {
-          oldestUpdate = card.updatedAt;
+      if (card.lastUpdated) {
+        if (!oldestUpdate || card.lastUpdated < oldestUpdate) {
+          oldestUpdate = card.lastUpdated;
         }
       }
     }

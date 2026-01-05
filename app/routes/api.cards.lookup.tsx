@@ -1,18 +1,14 @@
 /**
- * Card Search API
+ * Card Lookup API (renamed from search to avoid Shopify reserved path)
  *
- * GET /apps/trade-in/cards/search
+ * GET /apps/trade-in/cards/lookup
  *
  * Public endpoint (via App Proxy) for searching the card catalog.
  * Used for autocomplete in the trade-in submission form.
  * Now queries CardPriceV2 directly for real-time prices and images.
  *
- * @synapse ROUTES_SYNAPSE.md - See ./ROUTES_SYNAPSE.md for route documentation
- *
- * MIGRATION NOTE:
- *   This route can be migrated to use middleware pattern:
- *   import { withAppProxy } from "../middleware/auth.server";
- *   export const loader = withAppProxy(async ({ request, auth }) => { ... });
+ * NOTE: Route renamed from /cards/search to /cards/lookup because
+ * Shopify intercepts URLs containing "search" as a reserved path.
  */
 
 import type { LoaderFunctionArgs } from "react-router";
@@ -127,7 +123,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         rarity: true,
         imageUrl: true,
         bestPriceGbp: true, // Market price - use this as base for calculations
-        updatedAt: true, // For freshness check
+        lastUpdated: true, // For freshness check
       },
     });
 
@@ -137,12 +133,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     let newestUpdate: Date | null = null;
 
     for (const card of cards) {
-      if (card.updatedAt) {
-        if (!oldestUpdate || card.updatedAt < oldestUpdate) {
-          oldestUpdate = card.updatedAt;
+      if (card.lastUpdated) {
+        if (!oldestUpdate || card.lastUpdated < oldestUpdate) {
+          oldestUpdate = card.lastUpdated;
         }
-        if (!newestUpdate || card.updatedAt > newestUpdate) {
-          newestUpdate = card.updatedAt;
+        if (!newestUpdate || card.lastUpdated > newestUpdate) {
+          newestUpdate = card.lastUpdated;
         }
       }
     }

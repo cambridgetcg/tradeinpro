@@ -675,7 +675,7 @@ export async function getShopifyCustomerEmail(
 
 export const RATE_LIMITS = {
   "POST /api/submissions": { max: 10, windowSeconds: 3600 }, // 10/hour
-  "GET /api/cards/search": { max: 100, windowSeconds: 60 }, // 100/minute
+  "GET /api/cards/lookup": { max: 100, windowSeconds: 60 }, // 100/minute
   "GET /api/shipping/label": { max: 5, windowSeconds: 60 }, // 5/minute
   "POST /api/submissions/confirm": { max: 3, windowSeconds: 60 }, // 3/minute
 } as const;
