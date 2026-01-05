@@ -267,6 +267,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         totalCards,
         dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
         dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
+        dbSchema: process.env.DATABASE_URL?.match(/schema=([^&]+)/)?.[1] || "public (default)",
+        fullDbUrl: process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':***@') || "not set", // Mask password
       },
     };
 
