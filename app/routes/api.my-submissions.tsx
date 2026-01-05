@@ -220,7 +220,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const totalPages = Math.ceil(total / limit);
 
-    const response: CustomerSubmissionsResponse = {
+    const response: CustomerSubmissionsResponse & { _debug?: any } = {
       submissions: formattedSubmissions,
       stats,
       pagination: {
@@ -229,6 +229,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
         total,
         totalPages,
         hasMore: page < totalPages,
+      },
+      // Debug info - REMOVE AFTER DEBUGGING
+      _debug: {
+        shopifyCustomerId: context.customerId,
+        internalCustomerId: context.internalCustomerId,
+        submissionsFound: submissions.length,
+        total,
       },
     };
 
