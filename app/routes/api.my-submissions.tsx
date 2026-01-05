@@ -208,14 +208,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.log('[my-submissions] Total customers:', totalCustomers, 'Total cards:', totalCards);
 
     // Debug: Raw SQL to check tables in ALL schemas
-    const tableCheck = await prisma.$queryRaw`
-      SELECT table_schema, table_name
-      FROM information_schema.tables
-      WHERE table_type = 'BASE TABLE'
-      AND table_schema NOT IN ('pg_catalog', 'information_schema')
-      ORDER BY table_schema, table_name
-    ` as any[];
-    console.log('[my-submissions] All tables in database:', tableCheck);
+    let tableCheck: any[] = [];
+    let dbConnectionTest = "unknown";
+    let currentSchema = "unknown";
+    try {
+      // Test basic connection
+      const testResult = await prisma.$queryRaw`SELECT current_database() as db, current_schema() as schema, current_user as user`;
+      const test = (testResult as any[])[0];
+      dbConnectionTest = `db=${test.db}, schema=${test.schema}, user=${test.user}`;
+      currentSchema = test.schema;
+
+      tableCheck = await prisma.$queryRaw`
+        SELECT table_schema, table_name
+        FROM information_schema.tables
+        WHERE table_type = 'BASE TABLE'
+        AND table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY table_schema, table_name
+      ` as any[];
+    } catch (err: any) {
+      dbConnectionTest = `ERROR: ${err.message}`;
+    }
+    console.log('[my-submissions] All tables in database:', tableCheck, 'Connection:', dbConnectionTest);
 
     // Debug: Log query results
     console.log('[my-submissions] Query results:', {
@@ -276,6 +289,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         totalCustomers,
         totalCards,
         tablesInDb: tableCheck.map((t: any) => `${t.table_schema}.${t.table_name}`),
+        dbConnectionTest,
+        currentSchema,
         dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
         dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
         dbSchema: process.env.DATABASE_URL?.match(/schema=([^&]+)/)?.[1] || "public (default)",
