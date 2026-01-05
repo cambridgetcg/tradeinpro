@@ -207,16 +207,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const totalCards = await prisma.cardPriceV2.count();
     console.log('[my-submissions] Total customers:', totalCustomers, 'Total cards:', totalCards);
 
-    // Debug: Raw SQL to check tables
+    // Debug: Raw SQL to check tables in ALL schemas
     const tableCheck = await prisma.$queryRaw`
-      SELECT table_name,
-             (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count
-      FROM information_schema.tables t
-      WHERE table_schema = 'public'
-      AND table_type = 'BASE TABLE'
-      ORDER BY table_name
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE table_type = 'BASE TABLE'
+      AND table_schema NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY table_schema, table_name
     ` as any[];
-    console.log('[my-submissions] Tables in public schema:', tableCheck);
+    console.log('[my-submissions] All tables in database:', tableCheck);
 
     // Debug: Log query results
     console.log('[my-submissions] Query results:', {
@@ -276,7 +275,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         totalSubmissionsInDb,
         totalCustomers,
         totalCards,
-        tablesInDb: tableCheck.map((t: any) => t.table_name),
+        tablesInDb: tableCheck.map((t: any) => `${t.table_schema}.${t.table_name}`),
         dbHost: process.env.DATABASE_URL?.match(/@([^:]+):/)?.[1] || "unknown",
         dbName: process.env.DATABASE_URL?.match(/\/([^?]+)(\?|$)/)?.[1] || "unknown",
         dbSchema: process.env.DATABASE_URL?.match(/schema=([^&]+)/)?.[1] || "public (default)",
