@@ -690,3 +690,92 @@ model PriceSource {
   @@index([game], map: "idx_price_sources_game")
   @@map("price_sources")
 }
+
+// ============================================================================
+// TCG-100 INDEX SYSTEM (NASDAQ-Style)
+// Market-cap weighted index with buffer zone and weight capping
+// ============================================================================
+
+// Current index constituents - top 100 cards by market cap
+model IndexConstituent {
+  id              String   @id @default(cuid())
+
+  // Card identification
+  cardId          String   @map("card_id")
+  game            String   @default("onepiece")
+
+  // Ranking
+  rank            Int                                    // 1-100 position
+  previousRank    Int?     @map("previous_rank")         // Previous rank for tracking movement
+
+  // Weighting (NASDAQ-100 style)
+  rawWeight       Decimal  @map("raw_weight") @db.Decimal(10, 8)    // Before capping (market-cap based)
+  cappedWeight    Decimal  @map("capped_weight") @db.Decimal(10, 8) // After applying concentration rules
+
+  // Market metrics
+  marketCap       Decimal  @map("market_cap") @db.Decimal(14, 2)    // price × volume factor
+  priceGbp        Decimal  @map("price_gbp") @db.Decimal(10, 2)
+
+  // Index membership tracking
+  daysInIndex     Int      @default(0) @map("days_in_index")
+  inBufferZone    Boolean  @default(false) @map("in_buffer_zone")   // Ranks 76-100
+
+  // Status
+  isActive        Boolean  @default(true) @map("is_active")
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([game, cardId, isActive])
+  @@index([game, isActive], map: "idx_constituent_game_active")
+  @@index([game, rank], map: "idx_constituent_rank")
+  @@index([cardId], map: "idx_constituent_card")
+  @@map("index_constituents")
+}
+
+// Reconstitution history - monthly constituent changes
+model IndexReconstitution {
+  id                    String   @id @default(cuid())
+
+  // Index identification
+  game                  String   @default("onepiece")
+
+  // Changes made
+  additions             String[] // Card IDs added
+  removals              String[] // Card IDs removed
+  retained              Int      // Count of cards that stayed
+  bufferZoneProtected   Int      @map("buffer_zone_protected") // Cards protected by buffer zone
+
+  // Reconstitution date
+  reconstitutionDate    DateTime @map("reconstitution_date") @db.Date
+
+  // Timestamps
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([game, reconstitutionDate], map: "idx_reconstitution_game_date")
+  @@map("index_reconstitutions")
+}
+
+// Weight history - track weight changes over time
+model IndexWeightHistory {
+  id              String   @id @default(cuid())
+
+  // Card identification
+  cardId          String   @map("card_id")
+  game            String   @default("onepiece")
+
+  // Weight snapshot
+  rank            Int
+  rawWeight       Decimal  @map("raw_weight") @db.Decimal(10, 8)
+  cappedWeight    Decimal  @map("capped_weight") @db.Decimal(10, 8)
+  priceGbp        Decimal  @map("price_gbp") @db.Decimal(10, 2)
+
+  // Snapshot date
+  snapshotDate    DateTime @map("snapshot_date") @db.Date
+
+  @@unique([cardId, snapshotDate])
+  @@index([game, snapshotDate], map: "idx_weight_history_game_date")
+  @@index([cardId, snapshotDate], map: "idx_weight_history_card_date")
+  @@map("index_weight_history")
+}
