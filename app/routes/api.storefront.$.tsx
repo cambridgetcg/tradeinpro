@@ -80,8 +80,8 @@ function matchRoute(
   }
 
   // Card catalog (renamed from browse to avoid Shopify reserved path)
-  // GET /cards/catalog
-  if (segments[0] === "cards" && segments[1] === "catalog" && method === "GET") {
+  // GET /cards/catalog OR /cards/browse (legacy alias)
+  if (segments[0] === "cards" && (segments[1] === "catalog" || segments[1] === "browse") && method === "GET") {
     return { handler: cardsCatalogLoader };
   }
 
