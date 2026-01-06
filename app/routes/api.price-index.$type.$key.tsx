@@ -60,13 +60,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const { type, key } = params;
 
+  logger.info("Price index detail request", { type, key, params: JSON.stringify(params) });
+
   // Validate type parameter
   if (!type || !VALID_INDEX_TYPES.includes(type.toUpperCase())) {
+    logger.warn("Invalid index type", { type, validTypes: VALID_INDEX_TYPES });
     return errorResponse(400, "invalid_type", `Invalid index type. Must be one of: ${VALID_INDEX_TYPES.join(", ")}`);
   }
 
   // Validate key parameter
   if (!key || key.length < 1 || key.length > 50) {
+    logger.warn("Invalid index key", { key });
     return errorResponse(400, "invalid_key", "Index key must be 1-50 characters");
   }
 
