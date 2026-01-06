@@ -236,36 +236,41 @@ async function getHistoricalChange(
   indexKey: string,
   daysAgo: number
 ): Promise<number> {
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() - daysAgo);
-  targetDate.setHours(0, 0, 0, 0);
+  try {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - daysAgo);
+    targetDate.setHours(0, 0, 0, 0);
 
-  const snapshot = await prisma.priceIndexSnapshot.findFirst({
-    where: {
-      indexType,
-      indexKey,
-      snapshotDate: { lte: targetDate },
-    },
-    orderBy: { snapshotDate: "desc" },
-    select: { value: true },
-  });
+    const snapshot = await prisma.priceIndexSnapshot.findFirst({
+      where: {
+        indexType,
+        indexKey,
+        snapshotDate: { lte: targetDate },
+      },
+      orderBy: { snapshotDate: "desc" },
+      select: { value: true },
+    });
 
-  if (!snapshot) return 0;
+    if (!snapshot) return 0;
 
-  // Get current value for comparison
-  const current = await prisma.priceIndexSnapshot.findFirst({
-    where: { indexType, indexKey },
-    orderBy: { snapshotDate: "desc" },
-    select: { value: true },
-  });
+    // Get current value for comparison
+    const current = await prisma.priceIndexSnapshot.findFirst({
+      where: { indexType, indexKey },
+      orderBy: { snapshotDate: "desc" },
+      select: { value: true },
+    });
 
-  if (!current) return 0;
+    if (!current) return 0;
 
-  const oldValue = snapshot.value.toNumber();
-  const newValue = current.value.toNumber();
+    const oldValue = snapshot.value.toNumber();
+    const newValue = current.value.toNumber();
 
-  if (oldValue === 0) return 0;
-  return ((newValue - oldValue) / oldValue) * 100;
+    if (oldValue === 0) return 0;
+    return ((newValue - oldValue) / oldValue) * 100;
+  } catch {
+    // PriceIndexSnapshot table may not exist yet
+    return 0;
+  }
 }
 
 /**
@@ -503,28 +508,33 @@ export async function getIndexHistory(
   indexKey: string,
   days: number = 30
 ): Promise<{ date: string; value: number; change: number }[]> {
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
 
-  const snapshots = await prisma.priceIndexSnapshot.findMany({
-    where: {
-      indexType,
-      indexKey,
-      snapshotDate: { gte: startDate },
-    },
-    orderBy: { snapshotDate: "asc" },
-    select: {
-      snapshotDate: true,
-      value: true,
-      change24h: true,
-    },
-  });
+    const snapshots = await prisma.priceIndexSnapshot.findMany({
+      where: {
+        indexType,
+        indexKey,
+        snapshotDate: { gte: startDate },
+      },
+      orderBy: { snapshotDate: "asc" },
+      select: {
+        snapshotDate: true,
+        value: true,
+        change24h: true,
+      },
+    });
 
-  return snapshots.map((s) => ({
-    date: s.snapshotDate.toISOString().split("T")[0],
-    value: s.value.toNumber(),
-    change: s.change24h.toNumber(),
-  }));
+    return snapshots.map((s) => ({
+      date: s.snapshotDate.toISOString().split("T")[0],
+      value: s.value.toNumber(),
+      change: s.change24h.toNumber(),
+    }));
+  } catch {
+    // PriceIndexSnapshot table may not exist yet
+    return [];
+  }
 }
 
 /**
@@ -534,68 +544,76 @@ export async function getTopMovers(limit: number = 10): Promise<{
   gainers: TopMover[];
   losers: TopMover[];
 }> {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  yesterday.setHours(0, 0, 0, 0);
+  try {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  // Get today's prices with yesterday's for comparison
-  const todayPrices = await prisma.cardPriceHistory.findMany({
-    where: { snapshotDate: today },
-    select: {
-      cardId: true,
-      priceGbp: true,
-      change: true,
-    },
-    orderBy: { change: "desc" },
-    take: limit * 2, // Get extra for filtering
-  });
-
-  const yesterdayPrices = await prisma.cardPriceHistory.findMany({
-    where: { snapshotDate: yesterday },
-    select: {
-      cardId: true,
-      priceGbp: true,
-    },
-  });
-
-  const yesterdayMap = new Map(yesterdayPrices.map((p) => [p.cardId, p.priceGbp.toNumber()]));
-
-  // Get card names
-  const cardIds = todayPrices.map((p) => p.cardId);
-  const cards = await prisma.cardPriceV2.findMany({
-    where: { cardId: { in: cardIds } },
-    select: { cardId: true, name: true, setCode: true },
-  });
-  const cardMap = new Map(cards.map((c) => [c.cardId, c]));
-
-  // Build movers list
-  const movers: TopMover[] = todayPrices
-    .filter((p) => yesterdayMap.has(p.cardId))
-    .map((p) => {
-      const card = cardMap.get(p.cardId);
-      const prevPrice = yesterdayMap.get(p.cardId) ?? 0;
-      const currentPrice = p.priceGbp.toNumber();
-      const priceChange = currentPrice - prevPrice;
-
-      return {
-        cardId: p.cardId,
-        name: card?.name ?? p.cardId,
-        setCode: card?.setCode ?? null,
-        price: currentPrice,
-        change: priceChange,
-        changePercent: p.change.toNumber(),
-      };
+    // Get today's prices with yesterday's for comparison
+    const todayPrices = await prisma.cardPriceHistory.findMany({
+      where: { snapshotDate: today },
+      select: {
+        cardId: true,
+        priceGbp: true,
+        change: true,
+      },
+      orderBy: { change: "desc" },
+      take: limit * 2, // Get extra for filtering
     });
 
-  // Sort and split
-  const sorted = movers.sort((a, b) => b.changePercent - a.changePercent);
-  const gainers = sorted.filter((m) => m.changePercent > 0).slice(0, limit);
-  const losers = sorted.filter((m) => m.changePercent < 0).slice(-limit).reverse();
+    const yesterdayPrices = await prisma.cardPriceHistory.findMany({
+      where: { snapshotDate: yesterday },
+      select: {
+        cardId: true,
+        priceGbp: true,
+      },
+    });
 
-  return { gainers, losers };
+    const yesterdayMap = new Map(yesterdayPrices.map((p) => [p.cardId, p.priceGbp.toNumber()]));
+
+    // Get card names
+    const cardIds = todayPrices.map((p) => p.cardId);
+    const cards = await prisma.cardPriceV2.findMany({
+      where: { cardId: { in: cardIds } },
+      select: { cardId: true, name: true, setCode: true },
+    });
+    const cardMap = new Map(cards.map((c) => [c.cardId, c]));
+
+    // Build movers list
+    const movers: TopMover[] = todayPrices
+      .filter((p) => yesterdayMap.has(p.cardId))
+      .map((p) => {
+        const card = cardMap.get(p.cardId);
+        const prevPrice = yesterdayMap.get(p.cardId) ?? 0;
+        const currentPrice = p.priceGbp.toNumber();
+        const priceChange = currentPrice - prevPrice;
+
+        return {
+          cardId: p.cardId,
+          name: card?.name ?? p.cardId,
+          setCode: card?.setCode ?? null,
+          price: currentPrice,
+          change: priceChange,
+          changePercent: p.change.toNumber(),
+        };
+      });
+
+    // Sort and split
+    const sorted = movers.sort((a, b) => b.changePercent - a.changePercent);
+    const gainers = sorted.filter((m) => m.changePercent > 0).slice(0, limit);
+    const losers = sorted.filter((m) => m.changePercent < 0).slice(-limit).reverse();
+
+    return { gainers, losers };
+  } catch (error) {
+    // CardPriceHistory table may not exist yet
+    logger.warn("CardPriceHistory table not available for getTopMovers", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { gainers: [], losers: [] };
+  }
 }
 
 // ============================================================================
@@ -630,21 +648,30 @@ export async function getCrystalData(
 
     trace.addAttribute("nodeCount", cards.length);
 
-    // Get yesterday's prices for change calculation
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-
+    // Get yesterday's prices for change calculation (handle missing table gracefully)
     const cardIds = cards.map((c) => c.cardId);
-    const prevPrices = await prisma.cardPriceHistory.findMany({
-      where: {
-        cardId: { in: cardIds },
-        snapshotDate: yesterday,
-      },
-      select: { cardId: true, priceGbp: true },
-    });
+    let prevPriceMap = new Map<string, number>();
 
-    const prevPriceMap = new Map(prevPrices.map((p) => [p.cardId, p.priceGbp.toNumber()]));
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+
+      const prevPrices = await prisma.cardPriceHistory.findMany({
+        where: {
+          cardId: { in: cardIds },
+          snapshotDate: yesterday,
+        },
+        select: { cardId: true, priceGbp: true },
+      });
+
+      prevPriceMap = new Map(prevPrices.map((p) => [p.cardId, p.priceGbp.toNumber()]));
+    } catch (error) {
+      // Table may not exist yet - no change data available
+      logger.warn("CardPriceHistory table not available", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     // Build nodes
     const nodes: CrystalNode[] = cards.map((card) => {
@@ -663,30 +690,38 @@ export async function getCrystalData(
       };
     });
 
-    // Get correlations for edges
-    const correlations = await prisma.priceCorrelation.findMany({
-      where: {
-        OR: [
-          { entityA: { in: cardIds } },
-          { entityB: { in: cardIds } },
-        ],
-        correlation: { gte: 0.5 }, // Only show strong correlations
-      },
-      select: {
-        entityA: true,
-        entityB: true,
-        correlation: true,
-      },
-      take: 500, // Limit edges for performance
-    });
+    // Get correlations for edges (handle missing table gracefully)
+    let edges: CrystalEdge[] = [];
+    try {
+      const correlations = await prisma.priceCorrelation.findMany({
+        where: {
+          OR: [
+            { entityA: { in: cardIds } },
+            { entityB: { in: cardIds } },
+          ],
+          correlation: { gte: 0.5 }, // Only show strong correlations
+        },
+        select: {
+          entityA: true,
+          entityB: true,
+          correlation: true,
+        },
+        take: 500, // Limit edges for performance
+      });
 
-    const edges: CrystalEdge[] = correlations
-      .filter((c) => cardIds.includes(c.entityA) && cardIds.includes(c.entityB))
-      .map((c) => ({
-        source: c.entityA,
-        target: c.entityB,
-        correlation: c.correlation.toNumber(),
-      }));
+      edges = correlations
+        .filter((c) => cardIds.includes(c.entityA) && cardIds.includes(c.entityB))
+        .map((c) => ({
+          source: c.entityA,
+          target: c.entityB,
+          correlation: c.correlation.toNumber(),
+        }));
+    } catch (error) {
+      // Table may not exist yet - return empty edges
+      logger.warn("PriceCorrelation table not available", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     trace.addAttribute("edgeCount", edges.length);
 
