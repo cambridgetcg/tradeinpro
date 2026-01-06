@@ -38,6 +38,11 @@ import { loader as settingsPublicLoader } from "./api.settings.public";
 import { loader as mySubmissionsLoader } from "./api.my-submissions";
 import { loader as mySubmissionDetailLoader } from "./api.my-submissions.$number";
 import { action as mySubmissionActionHandler } from "./api.my-submissions.$number.action";
+// Price Index endpoints (for homepage CTA widget)
+import { loader as priceIndexLoader } from "./api.price-index";
+import { loader as priceIndexMoversLoader } from "./api.price-index.movers";
+import { loader as priceIndexCrystalLoader } from "./api.price-index.crystal";
+import { loader as priceIndexDetailLoader } from "./api.price-index.$type.$key";
 
 // ============================================================================
 // Route Matching
@@ -152,6 +157,33 @@ function matchRoute(
     return {
       handler: mySubmissionActionHandler,
       params: { number: segments[1] },
+    };
+  }
+
+  // ============================================================================
+  // Price Index Routes (for homepage CTA widget)
+  // ============================================================================
+
+  // GET /price-index
+  if (segments[0] === "price-index" && segments.length === 1 && method === "GET") {
+    return { handler: priceIndexLoader };
+  }
+
+  // GET /price-index/movers
+  if (segments[0] === "price-index" && segments[1] === "movers" && method === "GET") {
+    return { handler: priceIndexMoversLoader };
+  }
+
+  // GET /price-index/crystal
+  if (segments[0] === "price-index" && segments[1] === "crystal" && method === "GET") {
+    return { handler: priceIndexCrystalLoader };
+  }
+
+  // GET /price-index/:type/:key (e.g., /price-index/SET/OP01)
+  if (segments[0] === "price-index" && segments.length === 3 && method === "GET") {
+    return {
+      handler: priceIndexDetailLoader,
+      params: { type: segments[1], key: segments[2] },
     };
   }
 
