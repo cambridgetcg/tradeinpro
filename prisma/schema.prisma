@@ -586,12 +586,16 @@ model CardPriceHistory {
   game         String   @default("onepiece")
   setCode      String?  @map("set_code")
 
-  // Price snapshot
-  priceGbp     Decimal  @map("price_gbp") @db.Decimal(10, 2)
+  // Price snapshot - dual currency
+  priceJpy     Decimal? @map("price_jpy") @db.Decimal(10, 0)   // Original JPY price from CardRush
+  priceGbp     Decimal  @map("price_gbp") @db.Decimal(10, 2)   // Converted GBP price
+  exchangeRate Decimal? @map("exchange_rate") @db.Decimal(10, 8) // JPY to GBP rate used
   sourceUsed   String   @map("source_used")  // Which source provided the price (optcg, limitless, justtcg)
 
-  // Change from previous day
+  // Change from previous day (in JPY terms)
   change       Decimal  @default(0) @db.Decimal(8, 4)  // % change from previous
+  changeJpy    Decimal? @map("change_jpy") @db.Decimal(8, 4)  // % change in JPY only
+  changeFx     Decimal? @map("change_fx") @db.Decimal(8, 4)   // % change from FX movement
 
   // Timestamp
   snapshotDate DateTime @map("snapshot_date") @db.Date
@@ -600,7 +604,32 @@ model CardPriceHistory {
   @@index([cardId, snapshotDate], map: "idx_card_history_id_date")
   @@index([game, snapshotDate], map: "idx_card_history_game_date")
   @@index([setCode, snapshotDate], map: "idx_card_history_set_date")
+  @@index([priceJpy], map: "idx_card_history_jpy")
   @@map("card_price_history")
+}
+
+// Exchange rate history for tracking JPY/GBP movements
+model ExchangeRateHistory {
+  id         String   @id @default(cuid())
+
+  // Date (one record per day)
+  date       DateTime @unique @db.Date
+
+  // Exchange rates
+  jpyToGbp   Decimal  @map("jpy_to_gbp") @db.Decimal(10, 8)  // e.g., 0.00472
+  gbpToJpy   Decimal  @map("gbp_to_jpy") @db.Decimal(10, 4)  // e.g., 211.82
+
+  // Change tracking
+  change24h  Decimal? @map("change_24h") @db.Decimal(8, 4)   // % change from previous day
+
+  // Source tracking
+  source     String   @default("s3_pricefeed")
+
+  // Timestamps
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([date], map: "idx_exchange_rate_date")
+  @@map("exchange_rate_history")
 }
 
 // Correlation tracking between cards/sets for neural network visualization
@@ -628,4 +657,36 @@ model PriceCorrelation {
   @@index([entityB], map: "idx_correlation_entity_b")
   @@index([correlation], map: "idx_correlation_value")
   @@map("price_correlations")
+}
+
+// Multi-channel price source tracking for arbitrage/comparison
+model PriceSource {
+  id              String   @id @default(cuid())
+
+  // Card identification
+  cardId          String   @map("card_id")
+  game            String   @default("onepiece")
+
+  // Source identification
+  source          String   // 'cardrush', 'cardmarket', 'ebay_business', 'ebay_private', 'cardtrader'
+  platformId      String?  @map("platform_id")  // External ID (eBay item number, CardMarket ID)
+
+  // Pricing (multiple currencies)
+  priceJpy        Decimal? @map("price_jpy") @db.Decimal(10, 2)
+  priceGbp        Decimal? @map("price_gbp") @db.Decimal(10, 2)
+  costGbp         Decimal? @map("cost_gbp") @db.Decimal(10, 2)
+  sellingPriceGbp Decimal? @map("selling_price_gbp") @db.Decimal(10, 2)
+
+  // Exchange rate metadata
+  exchangeRate    Decimal? @map("exchange_rate") @db.Decimal(10, 5)
+
+  // Timestamps
+  lastUpdated     DateTime @default(now()) @map("last_updated") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([cardId, source])
+  @@index([cardId], map: "idx_price_sources_card")
+  @@index([source], map: "idx_price_sources_source")
+  @@index([game], map: "idx_price_sources_game")
+  @@map("price_sources")
 }

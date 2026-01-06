@@ -52,9 +52,44 @@ export interface TopMover {
   cardId: string;
   name: string;
   setCode: string | null;
+  imageUrl: string | null;
   price: number;
+  previousPrice: number;
   change: number;
   changePercent: number;
+  priceJpy: number | null;
+  previousPriceJpy: number | null;
+  changeJpy: number | null;
+  volume24h: number;
+  volumeRelative: number; // 0-1 scale relative to max volume
+  rank: number;
+}
+
+export interface MarketHealth {
+  sentiment: "bullish" | "bearish" | "neutral";
+  gainersCount: number;
+  losersCount: number;
+  unchangedCount: number;
+  totalCards: number;
+  avgChange24h: number;
+  medianChange24h: number;
+  volatilityIndex: number;
+  hotSets: {
+    setCode: string;
+    change: number;
+    cardCount: number;
+    reason: string;
+  }[];
+  sparkline: number[]; // Last 7 days index values
+}
+
+export interface CardVolatility {
+  score: number;        // 0-100
+  label: "Stable" | "Moderate" | "Volatile" | "Highly Volatile" | "Insufficient Data";
+  stdDev: number;
+  coefficientOfVariation: number;
+  dataPoints: number;
+  priceRange: { high: number; low: number; };
 }
 
 export interface CrystalNode {
@@ -538,11 +573,12 @@ export async function getIndexHistory(
 }
 
 /**
- * Get top gainers and losers
+ * Get top gainers and losers with enhanced data
  */
 export async function getTopMovers(limit: number = 10): Promise<{
   gainers: TopMover[];
   losers: TopMover[];
+  mostVolume: TopMover[];
 }> {
   try {
     const yesterday = new Date();
@@ -552,16 +588,16 @@ export async function getTopMovers(limit: number = 10): Promise<{
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Get today's prices with yesterday's for comparison
+    // Get today's prices - fetch more for volume analysis
     const todayPrices = await prisma.cardPriceHistory.findMany({
       where: { snapshotDate: today },
       select: {
         cardId: true,
         priceGbp: true,
+        priceJpy: true,
         change: true,
+        changeJpy: true,
       },
-      orderBy: { change: "desc" },
-      take: limit * 2, // Get extra for filtering
     });
 
     const yesterdayPrices = await prisma.cardPriceHistory.findMany({
@@ -569,51 +605,275 @@ export async function getTopMovers(limit: number = 10): Promise<{
       select: {
         cardId: true,
         priceGbp: true,
+        priceJpy: true,
       },
     });
 
-    const yesterdayMap = new Map(yesterdayPrices.map((p) => [p.cardId, p.priceGbp.toNumber()]));
+    const yesterdayMap = new Map(yesterdayPrices.map((p) => [
+      p.cardId,
+      { gbp: p.priceGbp.toNumber(), jpy: p.priceJpy?.toNumber() ?? null }
+    ]));
 
-    // Get card names
+    // Get card details including image URL
     const cardIds = todayPrices.map((p) => p.cardId);
     const cards = await prisma.cardPriceV2.findMany({
       where: { cardId: { in: cardIds } },
-      select: { cardId: true, name: true, setCode: true },
+      select: { cardId: true, name: true, setCode: true, imageUrl: true },
     });
     const cardMap = new Map(cards.map((c) => [c.cardId, c]));
 
-    // Build movers list
+    // Calculate volume (count of price changes in last 7 days)
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    weekAgo.setHours(0, 0, 0, 0);
+
+    const volumeData = await prisma.cardPriceHistory.groupBy({
+      by: ["cardId"],
+      where: {
+        snapshotDate: { gte: weekAgo },
+        change: { not: 0 },
+      },
+      _count: { cardId: true },
+    });
+
+    const volumeMap = new Map(volumeData.map((v) => [v.cardId, v._count.cardId]));
+    const maxVolume = Math.max(...volumeData.map((v) => v._count.cardId), 1);
+
+    // Build enhanced movers list
     const movers: TopMover[] = todayPrices
       .filter((p) => yesterdayMap.has(p.cardId))
       .map((p) => {
         const card = cardMap.get(p.cardId);
-        const prevPrice = yesterdayMap.get(p.cardId) ?? 0;
+        const prevData = yesterdayMap.get(p.cardId)!;
         const currentPrice = p.priceGbp.toNumber();
-        const priceChange = currentPrice - prevPrice;
+        const currentPriceJpy = p.priceJpy?.toNumber() ?? null;
+        const priceChange = currentPrice - prevData.gbp;
+        const volume = volumeMap.get(p.cardId) ?? 0;
 
         return {
           cardId: p.cardId,
           name: card?.name ?? p.cardId,
           setCode: card?.setCode ?? null,
+          imageUrl: card?.imageUrl ?? null,
           price: currentPrice,
+          previousPrice: prevData.gbp,
           change: priceChange,
           changePercent: p.change.toNumber(),
+          priceJpy: currentPriceJpy,
+          previousPriceJpy: prevData.jpy,
+          changeJpy: p.changeJpy?.toNumber() ?? null,
+          volume24h: volume,
+          volumeRelative: volume / maxVolume,
+          rank: 0, // Will be set after sorting
         };
       });
 
-    // Sort and split
-    const sorted = movers.sort((a, b) => b.changePercent - a.changePercent);
-    const gainers = sorted.filter((m) => m.changePercent > 0).slice(0, limit);
-    const losers = sorted.filter((m) => m.changePercent < 0).slice(-limit).reverse();
+    // Sort by change percent and assign ranks
+    const sortedByChange = [...movers].sort((a, b) => b.changePercent - a.changePercent);
 
-    return { gainers, losers };
+    // Get gainers (top N with positive change)
+    const gainers = sortedByChange
+      .filter((m) => m.changePercent > 0)
+      .slice(0, limit)
+      .map((m, i) => ({ ...m, rank: i + 1 }));
+
+    // Get losers (bottom N with negative change, sorted worst first)
+    const losers = sortedByChange
+      .filter((m) => m.changePercent < 0)
+      .slice(-limit)
+      .reverse()
+      .map((m, i) => ({ ...m, rank: i + 1 }));
+
+    // Get most volume (regardless of direction)
+    const mostVolume = [...movers]
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, limit)
+      .map((m, i) => ({ ...m, rank: i + 1 }));
+
+    return { gainers, losers, mostVolume };
   } catch (error) {
     // CardPriceHistory table may not exist yet
     logger.warn("CardPriceHistory table not available for getTopMovers", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return { gainers: [], losers: [] };
+    return { gainers: [], losers: [], mostVolume: [] };
   }
+}
+
+/**
+ * Calculate market health metrics
+ */
+export async function getMarketHealth(game: string = "onepiece"): Promise<MarketHealth> {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Get today's price changes
+    const todayPrices = await prisma.cardPriceHistory.findMany({
+      where: {
+        snapshotDate: today,
+        game,
+      },
+      select: {
+        cardId: true,
+        setCode: true,
+        change: true,
+      },
+    });
+
+    if (todayPrices.length === 0) {
+      return createEmptyMarketHealth();
+    }
+
+    // Calculate sentiment metrics
+    const changes = todayPrices.map((p) => p.change.toNumber());
+    const gainersCount = changes.filter((c) => c > 0).length;
+    const losersCount = changes.filter((c) => c < 0).length;
+    const unchangedCount = changes.filter((c) => c === 0).length;
+
+    const avgChange = changes.reduce((a, b) => a + b, 0) / changes.length;
+
+    // Calculate median
+    const sortedChanges = [...changes].sort((a, b) => a - b);
+    const medianChange = sortedChanges[Math.floor(sortedChanges.length / 2)];
+
+    // Calculate volatility index (std dev of changes)
+    const variance = changes.reduce((sum, c) => sum + Math.pow(c - avgChange, 2), 0) / changes.length;
+    const volatilityIndex = Math.sqrt(variance);
+
+    // Determine sentiment
+    let sentiment: "bullish" | "bearish" | "neutral";
+    if (gainersCount > losersCount * 1.5 && avgChange > 1) {
+      sentiment = "bullish";
+    } else if (losersCount > gainersCount * 1.5 && avgChange < -1) {
+      sentiment = "bearish";
+    } else {
+      sentiment = "neutral";
+    }
+
+    // Calculate hot sets (sets with significant movement)
+    const setChanges = new Map<string, { total: number; count: number }>();
+    for (const p of todayPrices) {
+      if (p.setCode) {
+        const existing = setChanges.get(p.setCode) ?? { total: 0, count: 0 };
+        existing.total += p.change.toNumber();
+        existing.count++;
+        setChanges.set(p.setCode, existing);
+      }
+    }
+
+    const hotSets = Array.from(setChanges.entries())
+      .map(([setCode, data]) => ({
+        setCode,
+        change: data.total / data.count,
+        cardCount: data.count,
+        reason: data.total / data.count > 5 ? "Rising demand" :
+                data.total / data.count < -5 ? "Price correction" : "Active trading",
+      }))
+      .filter((s) => Math.abs(s.change) > 2)
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      .slice(0, 5);
+
+    // Get sparkline (last 7 days of index values)
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const snapshots = await prisma.priceIndexSnapshot.findMany({
+      where: {
+        indexType: "GAME",
+        indexKey: game,
+        snapshotDate: { gte: weekAgo },
+      },
+      orderBy: { snapshotDate: "asc" },
+      select: { value: true },
+    });
+
+    const sparkline = snapshots.map((s) => s.value.toNumber());
+
+    return {
+      sentiment,
+      gainersCount,
+      losersCount,
+      unchangedCount,
+      totalCards: todayPrices.length,
+      avgChange24h: avgChange,
+      medianChange24h: medianChange,
+      volatilityIndex,
+      hotSets,
+      sparkline,
+    };
+  } catch (error) {
+    logger.warn("Error calculating market health", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return createEmptyMarketHealth();
+  }
+}
+
+function createEmptyMarketHealth(): MarketHealth {
+  return {
+    sentiment: "neutral",
+    gainersCount: 0,
+    losersCount: 0,
+    unchangedCount: 0,
+    totalCards: 0,
+    avgChange24h: 0,
+    medianChange24h: 0,
+    volatilityIndex: 0,
+    hotSets: [],
+    sparkline: [],
+  };
+}
+
+/**
+ * Calculate volatility for a specific card
+ */
+export function calculateCardVolatility(priceHistory: number[]): CardVolatility {
+  if (priceHistory.length < 7) {
+    return {
+      score: 50,
+      label: "Insufficient Data",
+      stdDev: 0,
+      coefficientOfVariation: 0,
+      dataPoints: priceHistory.length,
+      priceRange: { high: 0, low: 0 },
+    };
+  }
+
+  const mean = priceHistory.reduce((a, b) => a + b, 0) / priceHistory.length;
+  const squaredDiffs = priceHistory.map((p) => Math.pow(p - mean, 2));
+  const variance = squaredDiffs.reduce((a, b) => a + b, 0) / priceHistory.length;
+  const stdDev = Math.sqrt(variance);
+  const coefficientOfVariation = mean > 0 ? (stdDev / mean) * 100 : 0;
+
+  const high = Math.max(...priceHistory);
+  const low = Math.min(...priceHistory);
+
+  let label: CardVolatility["label"];
+  let score: number;
+
+  if (coefficientOfVariation < 5) {
+    label = "Stable";
+    score = 15;
+  } else if (coefficientOfVariation < 15) {
+    label = "Moderate";
+    score = 40;
+  } else if (coefficientOfVariation < 30) {
+    label = "Volatile";
+    score = 70;
+  } else {
+    label = "Highly Volatile";
+    score = 95;
+  }
+
+  return {
+    score,
+    label,
+    stdDev,
+    coefficientOfVariation,
+    dataPoints: priceHistory.length,
+    priceRange: { high, low },
+  };
 }
 
 // ============================================================================

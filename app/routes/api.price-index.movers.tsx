@@ -20,6 +20,7 @@ import { logger, metrics } from "../lib/observability.server";
 export interface TopMoversResponse {
   gainers: TopMover[];
   losers: TopMover[];
+  mostVolume: TopMover[];
   limit: number;
   timestamp: string;
 }
@@ -43,11 +44,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   try {
     metrics.increment("priceIndex.movers.requested");
 
-    const { gainers, losers } = await getTopMovers(limit);
+    const { gainers, losers, mostVolume } = await getTopMovers(limit);
 
     const response: TopMoversResponse = {
       gainers,
       losers,
+      mostVolume,
       limit,
       timestamp: new Date().toISOString(),
     };

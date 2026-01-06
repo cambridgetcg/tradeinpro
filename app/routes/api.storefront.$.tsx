@@ -43,6 +43,7 @@ import { loader as priceIndexLoader } from "./api.price-index";
 import { loader as priceIndexMoversLoader } from "./api.price-index.movers";
 import { loader as priceIndexCrystalLoader } from "./api.price-index.crystal";
 import { loader as priceIndexDetailLoader } from "./api.price-index.$type.$key";
+import { loader as cardHistoryLoader } from "./api.price-index.card.$cardId.history";
 
 // ============================================================================
 // Route Matching
@@ -184,6 +185,20 @@ function matchRoute(
     return {
       handler: priceIndexDetailLoader,
       params: { type: segments[1], key: segments[2] },
+    };
+  }
+
+  // GET /price-index/card/:cardId/history (e.g., /price-index/card/OP01-001/history)
+  if (
+    segments[0] === "price-index" &&
+    segments[1] === "card" &&
+    segments[2] &&
+    segments[3] === "history" &&
+    method === "GET"
+  ) {
+    return {
+      handler: cardHistoryLoader,
+      params: { cardId: segments[2] },
     };
   }
 
