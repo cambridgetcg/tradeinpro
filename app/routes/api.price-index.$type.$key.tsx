@@ -47,7 +47,7 @@ export interface IndexHistoryResponse {
   range: number;
 }
 
-const VALID_INDEX_TYPES = ["GAME", "SET", "RARITY", "TOP_100", "LANGUAGE", "VOLATILITY"];
+const VALID_INDEX_TYPES = ["GAME", "SET", "RARITY", "TOP_100", "TOP", "LANGUAGE", "VOLATILITY"];
 const MAX_RANGE_DAYS = 365;
 const DEFAULT_RANGE = 30;
 
@@ -76,8 +76,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     MAX_RANGE_DAYS
   );
 
-  const indexType = type.toUpperCase() as IndexType;
-  const indexKey = key;
+  let indexType = type.toUpperCase() as IndexType;
+  let indexKey = key;
+
+  // Handle special case: TOP/100 -> TOP_100
+  if (indexType === "TOP" && indexKey) {
+    indexType = `TOP_${indexKey}` as IndexType;
+    indexKey = `top${indexKey}`;
+  }
 
   try {
     // Get historical data
@@ -86,8 +92,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // Calculate current value
     let current: IndexResult | null = null;
 
-    // Check if we have a predefined config
-    const configKey = `${indexType}_${indexKey}`;
+    // Check if we have a predefined config (try both combined and separate keys)
+    let configKey = `${indexType}_${indexKey}`;
+    if (!INDEX_CONFIGS[configKey]) {
+      // Try just the type (e.g., TOP_100 is both the type and config key)
+      configKey = indexType;
+    }
     if (INDEX_CONFIGS[configKey]) {
       current = await calculateIndex(INDEX_CONFIGS[configKey]);
     } else if (indexType === "SET") {
