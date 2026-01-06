@@ -206,12 +206,31 @@
     });
     if (setCode) params.append("set", setCode);
 
+    const url = `${elements.apiBase}/cards/catalog?${params}`;
+    console.log("[trade-in] Fetching catalog:", url);
+
     try {
-      const response = await fetch(`${elements.apiBase}/cards/catalog?${params}`);
-      if (!response.ok) throw new Error("Browse failed");
+      const response = await fetch(url);
+      console.log("[trade-in] Catalog response status:", response.status);
+
+      if (!response.ok) {
+        // Try to get error details from response body
+        let errorDetails = "";
+        try {
+          const errorBody = await response.text();
+          errorDetails = errorBody.substring(0, 200);
+        } catch (e) { /* ignore */ }
+        console.error("[trade-in] Catalog fetch failed:", {
+          status: response.status,
+          statusText: response.statusText,
+          url: url,
+          details: errorDetails
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       return await response.json();
     } catch (error) {
-      console.error("Card browse error:", error);
+      console.error("[trade-in] Card browse error:", error);
       return { cards: [], total: 0, totalPages: 0, sets: [] };
     }
   }

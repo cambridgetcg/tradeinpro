@@ -182,9 +182,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const hasAppProxyParams = url.searchParams.has("signature");
 
   console.log(`[Storefront API] GET /${splatPath}`, {
+    fullUrl: url.pathname,
+    splatPath,
     hasAuthHeader,
     hasAppProxyParams,
     isSessionTokenRoute: isSessionTokenRoute(splatPath),
+    allParams: Object.fromEntries(url.searchParams.entries()),
   });
 
   // For Session Token routes (my-submissions), allow Bearer token auth
@@ -219,7 +222,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Match the route
   const match = matchRoute(splatPath, "GET");
   if (!match) {
-    console.warn(`[Storefront API] Route not found: GET /${splatPath}`);
+    console.warn(`[Storefront API] Route not found: GET /${splatPath}`, {
+      splatPath,
+      splatPathType: typeof splatPath,
+      splatPathLength: splatPath.length,
+      normalizedPath: splatPath.startsWith("/") ? splatPath.slice(1) : splatPath,
+      segments: (splatPath.startsWith("/") ? splatPath.slice(1) : splatPath).split("/").filter(Boolean),
+    });
     return errorResponse(404, "not_found", `Route not found: GET /${splatPath}`);
   }
 
