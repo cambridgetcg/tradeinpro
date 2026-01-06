@@ -537,3 +537,95 @@ model IdempotencyRecord {
   @@index([expiresAt], map: "idx_idempotency_expires")
   @@map("idempotency_records")
 }
+
+// ============================================================================
+// PRICE INDEX SYSTEM (PRISM)
+// Market intelligence and trend tracking
+// ============================================================================
+
+// Daily snapshot of index values for tracking trends
+model PriceIndexSnapshot {
+  id            String   @id @default(cuid())
+
+  // Index identification
+  indexType     String   @map("index_type")  // GAME, SET, RARITY, TOP_100, LANGUAGE, VOLATILITY
+  indexKey      String   @map("index_key")   // "onepiece", "OP01", "SR", "EN", etc.
+
+  // Core metrics
+  value         Decimal  @db.Decimal(12, 4)  // Index value
+  change24h     Decimal  @default(0) @map("change_24h") @db.Decimal(8, 4)   // 24h change %
+  change7d      Decimal  @default(0) @map("change_7d") @db.Decimal(8, 4)    // 7d change %
+  change30d     Decimal  @default(0) @map("change_30d") @db.Decimal(8, 4)   // 30d change %
+
+  // Volume metrics
+  cardCount     Int      @map("card_count")                          // Cards in index
+  totalMarketCap Decimal @map("total_market_cap") @db.Decimal(14, 2) // Total value in GBP
+  avgPrice      Decimal  @map("avg_price") @db.Decimal(10, 2)        // Average card price
+
+  // Volatility metrics
+  volatility    Decimal  @default(0) @db.Decimal(8, 4)   // Std dev of prices
+  highPrice     Decimal  @map("high_price") @db.Decimal(10, 2)  // Highest card
+  lowPrice      Decimal  @map("low_price") @db.Decimal(10, 2)   // Lowest card
+
+  // Timestamps
+  snapshotDate  DateTime @map("snapshot_date") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([indexType, indexKey, snapshotDate])
+  @@index([indexType, snapshotDate], map: "idx_price_index_type_date")
+  @@index([indexKey], map: "idx_price_index_key")
+  @@map("price_index_snapshots")
+}
+
+// Card-level price history for detailed trend analysis
+model CardPriceHistory {
+  id           String   @id @default(cuid())
+
+  // Card identification
+  cardId       String   @map("card_id")      // References CardPriceV2.cardId
+  game         String   @default("onepiece")
+  setCode      String?  @map("set_code")
+
+  // Price snapshot
+  priceGbp     Decimal  @map("price_gbp") @db.Decimal(10, 2)
+  sourceUsed   String   @map("source_used")  // Which source provided the price (optcg, limitless, justtcg)
+
+  // Change from previous day
+  change       Decimal  @default(0) @db.Decimal(8, 4)  // % change from previous
+
+  // Timestamp
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+
+  @@unique([cardId, snapshotDate])
+  @@index([cardId, snapshotDate], map: "idx_card_history_id_date")
+  @@index([game, snapshotDate], map: "idx_card_history_game_date")
+  @@index([setCode, snapshotDate], map: "idx_card_history_set_date")
+  @@map("card_price_history")
+}
+
+// Correlation tracking between cards/sets for neural network visualization
+model PriceCorrelation {
+  id            String   @id @default(cuid())
+
+  // Entity pair (can be card IDs or set codes)
+  entityA       String   @map("entity_a")
+  entityB       String   @map("entity_b")
+  entityType    String   @default("card") @map("entity_type")  // "card" or "set"
+
+  // Correlation coefficient (-1 to 1)
+  correlation   Decimal  @db.Decimal(5, 4)
+
+  // Statistical metadata
+  sampleSize    Int      @map("sample_size")  // Days of data used
+  pValue        Decimal? @map("p_value") @db.Decimal(8, 6)  // Statistical significance
+
+  // Timestamps
+  calculatedAt  DateTime @default(now()) @map("calculated_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([entityA, entityB])
+  @@index([entityA], map: "idx_correlation_entity_a")
+  @@index([entityB], map: "idx_correlation_entity_b")
+  @@index([correlation], map: "idx_correlation_value")
+  @@map("price_correlations")
+}
