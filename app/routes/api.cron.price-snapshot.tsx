@@ -19,6 +19,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { runDailySnapshot } from "../lib/price-index.server";
 import { logger } from "../lib/observability.server";
+import { invalidateArchiveCaches } from "../lib/cache.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Verify cron secret
@@ -38,6 +39,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   try {
     const results = await runDailySnapshot();
+
+    // Invalidate caches after successful snapshot
+    await invalidateArchiveCaches();
+
     const duration = Date.now() - startTime;
 
     logger.info("Price snapshot cron: Complete", {

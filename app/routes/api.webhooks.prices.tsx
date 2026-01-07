@@ -232,22 +232,19 @@ async function handleDirectWebhook(request: Request, body: string): Promise<Resp
 }
 
 async function triggerPriceSync(notification: PriceUpdateNotification): Promise<void> {
-  // Import modules dynamically to avoid server-only import issues
-  const { syncPricesFromExternal } = await import("../lib/prices.server");
+  // Import cache module dynamically to avoid server-only import issues
   const { invalidatePriceCaches } = await import("../lib/cache.server");
 
-  console.log(`Starting price sync triggered by ${notification.source} update`);
+  console.log(`Processing price update notification from ${notification.source}`);
 
   const startTime = Date.now();
-  const result = await syncPricesFromExternal();
-  const duration = Date.now() - startTime;
 
-  // Invalidate price caches after sync
+  // Lambda writes directly to card_prices_v2, so we just need to invalidate caches
   await invalidatePriceCaches();
 
-  console.log(`Price sync completed in ${duration}ms:`, {
-    synced: result.synced,
-    errors: result.errors,
+  const duration = Date.now() - startTime;
+
+  console.log(`Cache invalidation completed in ${duration}ms:`, {
     source: notification.source,
     lambdaStats: notification.stats,
   });

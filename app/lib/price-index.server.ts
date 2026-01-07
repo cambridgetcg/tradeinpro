@@ -463,7 +463,9 @@ export async function takeCardPriceSnapshots(game?: string): Promise<number> {
     const snapshots = cards.map((card) => {
       const price = card.bestPriceGbp?.toNumber() ?? 0;
       const prevPrice = prevPriceMap.get(card.cardId) ?? price;
-      const change = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+      // Calculate change percentage, capped to ±9999% to avoid Decimal(8,4) overflow
+      const rawChange = prevPrice > 0 ? ((price - prevPrice) / prevPrice) * 100 : 0;
+      const change = Math.max(-9999.9999, Math.min(9999.9999, rawChange));
 
       // Determine which source provided the best price
       let sourceUsed = "unknown";

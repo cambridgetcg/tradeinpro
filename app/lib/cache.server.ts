@@ -53,6 +53,23 @@ export const CACHE_TTL = {
 
   /** Single card details - 10 minutes */
   CARD_DETAIL: 600,
+
+  // === PRICE ARCHIVE TTLs ===
+
+  /** Card price history - 5 minutes (updates daily at midnight) */
+  CARD_HISTORY: 300,
+
+  /** Price index values - 5 minutes (updates daily at midnight) */
+  PRICE_INDEX: 300,
+
+  /** Price index history (for charts) - 10 minutes */
+  INDEX_HISTORY: 600,
+
+  /** Set summary/performance - 5 minutes */
+  SET_SUMMARY: 300,
+
+  /** Game-wide aggregates - 5 minutes */
+  GAME_AGGREGATE: 300,
 } as const;
 
 // ============================================================================
@@ -65,6 +82,13 @@ export const CACHE_PREFIX = {
   SEARCH: "search:",
   SETTINGS: "settings:",
   STATS: "stats:",
+
+  // === PRICE ARCHIVE PREFIXES ===
+  CARD_HISTORY: "history:card:",      // history:card:{cardId}:{days}
+  INDEX_CURRENT: "index:current:",    // index:current:{type}:{key}
+  INDEX_HISTORY: "index:history:",    // index:history:{type}:{key}:{days}
+  SET_SUMMARY: "summary:set:",        // summary:set:{setCode}
+  GAME_AGGREGATE: "aggregate:game:",  // aggregate:game:{game}
 } as const;
 
 // ============================================================================
@@ -428,4 +452,117 @@ export async function invalidateSettingsCache(): Promise<void> {
   const cache = getCache();
   await cache.invalidatePattern(`${CACHE_PREFIX.SETTINGS}*`);
   console.log("Cache: Invalidated settings cache");
+}
+
+// ============================================================================
+// Price Archive Caching Functions
+// ============================================================================
+
+/**
+ * Cache card price history for chart display.
+ * Key format: history:card:{cardId}:{days}
+ */
+export async function getCachedCardHistory<T>(
+  cardId: string,
+  days: number,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cache = getCache();
+  const key = `${CACHE_PREFIX.CARD_HISTORY}${cardId}:${days}`;
+  return cache.getOrSet(key, fetcher, CACHE_TTL.CARD_HISTORY);
+}
+
+/**
+ * Cache current price index value.
+ * Key format: index:current:{type}:{key}
+ */
+export async function getCachedIndexCurrent<T>(
+  indexType: string,
+  indexKey: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cache = getCache();
+  const key = `${CACHE_PREFIX.INDEX_CURRENT}${indexType}:${indexKey}`;
+  return cache.getOrSet(key, fetcher, CACHE_TTL.PRICE_INDEX);
+}
+
+/**
+ * Cache price index history for chart display.
+ * Key format: index:history:{type}:{key}:{days}
+ */
+export async function getCachedIndexHistory<T>(
+  indexType: string,
+  indexKey: string,
+  days: number,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cache = getCache();
+  const key = `${CACHE_PREFIX.INDEX_HISTORY}${indexType}:${indexKey}:${days}`;
+  return cache.getOrSet(key, fetcher, CACHE_TTL.INDEX_HISTORY);
+}
+
+/**
+ * Cache set summary/performance data.
+ * Key format: summary:set:{setCode}
+ */
+export async function getCachedSetSummary<T>(
+  setCode: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cache = getCache();
+  const key = `${CACHE_PREFIX.SET_SUMMARY}${setCode}`;
+  return cache.getOrSet(key, fetcher, CACHE_TTL.SET_SUMMARY);
+}
+
+/**
+ * Cache game-wide aggregate data.
+ * Key format: aggregate:game:{game}
+ */
+export async function getCachedGameAggregate<T>(
+  game: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cache = getCache();
+  const key = `${CACHE_PREFIX.GAME_AGGREGATE}${game}`;
+  return cache.getOrSet(key, fetcher, CACHE_TTL.GAME_AGGREGATE);
+}
+
+/**
+ * Invalidate all price archive caches (call after daily snapshot).
+ */
+export async function invalidateArchiveCaches(): Promise<void> {
+  const cache = getCache();
+  await Promise.all([
+    cache.invalidatePattern(`${CACHE_PREFIX.CARD_HISTORY}*`),
+    cache.invalidatePattern(`${CACHE_PREFIX.INDEX_CURRENT}*`),
+    cache.invalidatePattern(`${CACHE_PREFIX.INDEX_HISTORY}*`),
+    cache.invalidatePattern(`${CACHE_PREFIX.SET_SUMMARY}*`),
+    cache.invalidatePattern(`${CACHE_PREFIX.GAME_AGGREGATE}*`),
+  ]);
+  console.log("Cache: Invalidated all price archive caches");
+}
+
+/**
+ * Invalidate caches for a specific card.
+ */
+export async function invalidateCardCaches(cardId: string): Promise<void> {
+  const cache = getCache();
+  await Promise.all([
+    cache.invalidatePattern(`${CACHE_PREFIX.CARD_HISTORY}${cardId}:*`),
+    cache.invalidatePattern(`${CACHE_PREFIX.CARD_PRICE}${cardId}`),
+  ]);
+}
+
+/**
+ * Get cache statistics for monitoring.
+ */
+export async function getCacheStats(): Promise<{
+  isRedis: boolean;
+  status: "connected" | "fallback";
+}> {
+  const cache = getCache();
+  return {
+    isRedis: cache.isUsingRedis(),
+    status: cache.isUsingRedis() ? "connected" : "fallback",
+  };
 }

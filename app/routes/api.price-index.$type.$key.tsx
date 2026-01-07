@@ -47,7 +47,7 @@ export interface IndexHistoryResponse {
   range: number;
 }
 
-const VALID_INDEX_TYPES = ["GAME", "SET", "RARITY", "TOP_100", "TOP", "LANGUAGE", "VOLATILITY"];
+const VALID_INDEX_TYPES: readonly string[] = ["GAME", "SET", "RARITY", "TOP_100", "TOP", "LANGUAGE", "VOLATILITY"] as const;
 const MAX_RANGE_DAYS = 365;
 const DEFAULT_RANGE = 30;
 
@@ -64,7 +64,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // Validate type parameter
   if (!type || !VALID_INDEX_TYPES.includes(type.toUpperCase())) {
-    logger.warn("Invalid index type", { type, validTypes: VALID_INDEX_TYPES });
+    logger.warn("Invalid index type", { type, validTypes: VALID_INDEX_TYPES.join(", ") });
     return errorResponse(400, "invalid_type", `Invalid index type. Must be one of: ${VALID_INDEX_TYPES.join(", ")}`);
   }
 
@@ -80,18 +80,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     MAX_RANGE_DAYS
   );
 
-  let indexType = type.toUpperCase() as IndexType;
+  let indexType = type.toUpperCase();
   let indexKey = key;
 
   // Handle special case: TOP/100 -> TOP_100
   if (indexType === "TOP" && indexKey) {
-    indexType = `TOP_${indexKey}` as IndexType;
+    indexType = `TOP_${indexKey}`;
     indexKey = `top${indexKey}`;
   }
 
   try {
     // Get historical data
-    const history = await getIndexHistory(indexType, indexKey, range);
+    const history = await getIndexHistory(indexType as IndexType, indexKey, range);
 
     // Calculate current value
     let current: IndexResult | null = null;
@@ -125,7 +125,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     const response: IndexHistoryResponse = {
       index: {
-        type: indexType,
+        type: indexType as IndexType,
         key: indexKey,
       },
       current,

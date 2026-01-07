@@ -323,7 +323,7 @@ export async function action({ request }: ActionFunctionArgs) {
           address1: sanitizeString(body.shippingAddress1, 100),
           address2: body.shippingAddress2 ? sanitizeString(body.shippingAddress2, 100) : undefined,
           city: sanitizeString(body.shippingCity, 50),
-          postalCode: formatUKPostcode(body.shippingPostalCode),
+          postalCode: formatUKPostcode(body.shippingPostalCode || ''),
           country: body.shippingCountry || 'GB',
         };
 

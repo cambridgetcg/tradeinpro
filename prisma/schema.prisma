@@ -66,8 +66,6 @@ model ExternalCardPrice {
   @@index([shopifyProductId], map: "idx_card_prices_shopify")
   @@index([isAlternateArt], map: "idx_card_prices_alt_art")
   @@index([variantType], map: "idx_card_prices_variant")
-  @@index([marketPriceGbp], map: "idx_card_prices_market_gbp")
-  @@index([tradeinPriceGbp], map: "idx_card_prices_tradein_gbp")
   @@index([tcgplayerPriceGbp], map: "idx_card_prices_tcgplayer_gbp")
   @@index([cardmarketPriceGbp], map: "idx_card_prices_cardmarket_gbp")
   @@map("card_prices")
@@ -604,7 +602,6 @@ model CardPriceHistory {
   @@index([cardId, snapshotDate], map: "idx_card_history_id_date")
   @@index([game, snapshotDate], map: "idx_card_history_game_date")
   @@index([setCode, snapshotDate], map: "idx_card_history_set_date")
-  @@index([priceJpy], map: "idx_card_history_jpy")
   @@map("card_price_history")
 }
 

@@ -80,6 +80,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentSubmissions,
     oldPendingCount,
     highValuePendingCount,
+    jpPriceLatest,
+    enPriceLatest,
+    historyLatest,
   ] = await Promise.all([
     // Pending arrival (SUBMITTED, IN_TRANSIT)
     prisma.tradeInSubmission.count({
@@ -174,6 +177,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         quotedTotal: { gte: 10000 }, // £100+
       },
     }),
+
+    // Price data staleness checks
+    prisma.japanesePriceSource.findFirst({
+      orderBy: { updatedAt: "desc" },
+      select: { updatedAt: true },
+    }),
+
+    prisma.cardPriceV2.findFirst({
+      where: { language: "EN" },
+      orderBy: { lastUpdated: "desc" },
+      select: { lastUpdated: true },
+    }),
+
+    prisma.cardPriceHistory.findFirst({
+      orderBy: { snapshotDate: "desc" },
+      select: { snapshotDate: true },
+    }),
   ]);
 
   // Build stats object
@@ -234,6 +254,47 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       link: "/app/trade-ins?status=RECEIVED",
       linkText: "Start grading",
     });
+  }
+
+  // Price data staleness alerts (> 26 hours = missed daily sync)
+  const now = Date.now();
+  const STALE_THRESHOLD_HOURS = 26;
+
+  if (jpPriceLatest?.updatedAt) {
+    const jpHoursStale = (now - jpPriceLatest.updatedAt.getTime()) / (1000 * 60 * 60);
+    if (jpHoursStale > STALE_THRESHOLD_HOURS) {
+      alerts.push({
+        type: "critical",
+        title: "JP prices stale",
+        message: `Japanese card prices haven't updated in ${Math.round(jpHoursStale)} hours. Check Vercel cron logs.`,
+        link: "/app/jp-prices",
+        linkText: "View JP prices",
+      });
+    }
+  }
+
+  if (enPriceLatest?.lastUpdated) {
+    const enHoursStale = (now - enPriceLatest.lastUpdated.getTime()) / (1000 * 60 * 60);
+    if (enHoursStale > STALE_THRESHOLD_HOURS) {
+      alerts.push({
+        type: "critical",
+        title: "EN prices stale",
+        message: `English card prices haven't updated in ${Math.round(enHoursStale)} hours. Check Lambda/OPTCG sync.`,
+        link: "/app/prices",
+        linkText: "View prices",
+      });
+    }
+  }
+
+  if (historyLatest?.snapshotDate) {
+    const historyHoursStale = (now - historyLatest.snapshotDate.getTime()) / (1000 * 60 * 60);
+    if (historyHoursStale > STALE_THRESHOLD_HOURS) {
+      alerts.push({
+        type: "warning",
+        title: "Price history stale",
+        message: `Daily price snapshots haven't run in ${Math.round(historyHoursStale)} hours. Check price-snapshot cron.`,
+      });
+    }
   }
 
   return {

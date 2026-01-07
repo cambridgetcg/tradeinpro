@@ -101,7 +101,7 @@ async function checkDatabase(): Promise<HealthCheck> {
 
   try {
     // Dynamic import to avoid server-only issues
-    const { prisma } = await import("../db.server");
+    const { default: prisma } = await import("../db.server");
 
     // Simple query to test connectivity
     await prisma.$queryRaw`SELECT 1`;
@@ -169,7 +169,7 @@ async function checkPriceApi(): Promise<HealthCheck> {
 
     if (!priceApiUrl) {
       // If no external price API configured, check internal price data
-      const { prisma } = await import("../db.server");
+      const { default: prisma } = await import("../db.server");
 
       const recentPrice = await prisma.cardPriceV2.findFirst({
         where: {

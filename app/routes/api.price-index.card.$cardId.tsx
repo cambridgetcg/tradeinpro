@@ -20,8 +20,10 @@ import {
   errorResponse,
   parsePositiveInt,
 } from "../lib/app-proxy.server";
-import { prisma } from "../db.server";
+import prisma from "../db.server";
+import type { CardPriceHistory } from "@prisma/client";
 import { logger, metrics } from "../lib/observability.server";
+import { getCachedCardHistory } from "../lib/cache.server";
 
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 365;
@@ -140,42 +142,48 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       );
     }
 
-    // Get price history
+    // Get price history (cached)
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const history = await prisma.cardPriceHistory.findMany({
-      where: {
-        cardId: card.cardId,
-        snapshotDate: { gte: startDate },
-      },
-      orderBy: { snapshotDate: "asc" },
-    });
+    const history = await getCachedCardHistory(
+      card.cardId,
+      days,
+      async () => {
+        return prisma.cardPriceHistory.findMany({
+          where: {
+            cardId: card.cardId,
+            snapshotDate: { gte: startDate },
+          },
+          orderBy: { snapshotDate: "asc" },
+        });
+      }
+    );
 
     // Calculate stats from history
-    const pricesGbp = history.map((h) => h.priceGbp.toNumber());
+    const pricesGbp = history.map((h: CardPriceHistory) => h.priceGbp.toNumber());
     const pricesJpy = history
-      .map((h) => h.priceJpy?.toNumber())
-      .filter((p): p is number => p !== null && p > 0);
+      .map((h: CardPriceHistory) => h.priceJpy?.toNumber())
+      .filter((p: number | undefined): p is number => p !== null && p !== undefined && p > 0);
 
     const currentGbp = card.bestPriceGbp?.toNumber() ?? pricesGbp[pricesGbp.length - 1] ?? 0;
     const highGbp = pricesGbp.length > 0 ? Math.max(...pricesGbp) : currentGbp;
     const lowGbp = pricesGbp.length > 0 ? Math.min(...pricesGbp) : currentGbp;
     const avgGbp = pricesGbp.length > 0
-      ? pricesGbp.reduce((a, b) => a + b, 0) / pricesGbp.length
+      ? pricesGbp.reduce((a: number, b: number) => a + b, 0) / pricesGbp.length
       : currentGbp;
 
     const highJpy = pricesJpy.length > 0 ? Math.max(...pricesJpy) : null;
     const lowJpy = pricesJpy.length > 0 ? Math.min(...pricesJpy) : null;
     const avgJpy = pricesJpy.length > 0
-      ? pricesJpy.reduce((a, b) => a + b, 0) / pricesJpy.length
+      ? pricesJpy.reduce((a: number, b: number) => a + b, 0) / pricesJpy.length
       : null;
 
     // Calculate volatility (standard deviation as % of mean)
     let volatility = 0;
     if (pricesGbp.length > 1 && avgGbp > 0) {
-      const squaredDiffs = pricesGbp.map((p) => Math.pow(p - avgGbp, 2));
-      const variance = squaredDiffs.reduce((a, b) => a + b, 0) / pricesGbp.length;
+      const squaredDiffs = pricesGbp.map((p: number) => Math.pow(p - avgGbp, 2));
+      const variance = squaredDiffs.reduce((a: number, b: number) => a + b, 0) / pricesGbp.length;
       volatility = (Math.sqrt(variance) / avgGbp) * 100;
     }
 
@@ -247,7 +255,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         volatility,
         daysTracked: history.length,
       },
-      history: history.map((h) => ({
+      history: history.map((h: CardPriceHistory) => ({
         date: h.snapshotDate.toISOString().split("T")[0],
         priceGbp: h.priceGbp.toNumber(),
         priceJpy: h.priceJpy?.toNumber() ?? null,
