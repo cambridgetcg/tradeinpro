@@ -16,6 +16,13 @@ interface HealthCheck {
   message?: string;
 }
 
+interface ShardHealthCheck {
+  game: string;
+  displayName: string;
+  connected: boolean;
+  latencyMs: number;
+}
+
 interface HealthResponse {
   status: "healthy" | "degraded" | "unhealthy";
   timestamp: string;
@@ -25,6 +32,12 @@ interface HealthResponse {
     database: HealthCheck;
     redis: HealthCheck;
     priceApi: HealthCheck;
+    shards?: {
+      status: "ok" | "degraded" | "error";
+      activeCount: number;
+      totalCount: number;
+      shards: ShardHealthCheck[];
+    };
   };
 }
 
@@ -86,14 +99,60 @@ async function runHealthChecks(): Promise<{
   database: HealthCheck;
   redis: HealthCheck;
   priceApi: HealthCheck;
+  shards: {
+    status: "ok" | "degraded" | "error";
+    activeCount: number;
+    totalCount: number;
+    shards: ShardHealthCheck[];
+  };
 }> {
-  const [database, redis, priceApi] = await Promise.all([
+  const [database, redis, priceApi, shards] = await Promise.all([
     checkDatabase(),
     checkRedis(),
     checkPriceApi(),
+    checkShards(),
   ]);
 
-  return { database, redis, priceApi };
+  return { database, redis, priceApi, shards };
+}
+
+async function checkShards(): Promise<{
+  status: "ok" | "degraded" | "error";
+  activeCount: number;
+  totalCount: number;
+  shards: ShardHealthCheck[];
+}> {
+  try {
+    const { shardRouter } = await import("../lib/shard.server");
+
+    const activeShards = shardRouter.getActiveShards();
+    const allShards = shardRouter.getAllShards();
+    const healthResults = await shardRouter.checkAllHealth();
+
+    const shardHealthList: ShardHealthCheck[] = healthResults.map((h) => ({
+      game: h.game,
+      displayName: h.displayName,
+      connected: h.connected,
+      latencyMs: h.latencyMs,
+    }));
+
+    const allConnected = healthResults.every((h) => h.connected);
+    const anyDisconnected = healthResults.some((h) => !h.connected);
+
+    return {
+      status: allConnected ? "ok" : anyDisconnected ? "degraded" : "error",
+      activeCount: activeShards.length,
+      totalCount: allShards.length,
+      shards: shardHealthList,
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      activeCount: 0,
+      totalCount: 0,
+      shards: [],
+    };
+  }
 }
 
 async function checkDatabase(): Promise<HealthCheck> {
