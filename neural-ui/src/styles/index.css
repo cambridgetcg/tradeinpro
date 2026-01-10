@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+/* Custom components */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-neural-primary text-white hover:bg-emerald-600;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+  }
+
+  .btn-danger {
+    @apply bg-neural-danger text-white hover:bg-red-600;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  }
+
+  .stat-card {
+    @apply card flex flex-col gap-2;
+  }
+
+  .stat-label {
+    @apply text-sm text-gray-500 font-medium;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold text-gray-900;
+  }
+
+  .stat-change {
+    @apply text-sm font-medium;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .badge-info {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-neural-primary focus:border-transparent;
+  }
+
+  .textarea {
+    @apply input min-h-[100px] resize-y;
+  }
+}
+
+/* Deal type colors */
+.deal-type-arbitrage { @apply text-purple-600 bg-purple-50; }
+.deal-type-undervalued { @apply text-blue-600 bg-blue-50; }
+.deal-type-momentum { @apply text-orange-600 bg-orange-50; }
+.deal-type-supply { @apply text-red-600 bg-red-50; }
+.deal-type-correlation { @apply text-teal-600 bg-teal-50; }
+.deal-type-seasonal { @apply text-pink-600 bg-pink-50; }
+.deal-type-demand { @apply text-amber-600 bg-amber-50; }
+
+/* Feedback button states */
+.feedback-btn {
+  @apply p-2 rounded-lg transition-all duration-200;
+}
+
+.feedback-btn:hover {
+  @apply scale-110;
+}
+
+.feedback-btn.good {
+  @apply bg-green-100 hover:bg-green-200;
+}
+
+.feedback-btn.good.active {
+  @apply bg-green-500 text-white;
+}
+
+.feedback-btn.bad {
+  @apply bg-red-100 hover:bg-red-200;
+}
+
+.feedback-btn.bad.active {
+  @apply bg-red-500 text-white;
+}
+
+/* Confusion matrix cell */
+.matrix-cell {
+  @apply flex items-center justify-center text-xs font-medium h-8 w-8;
+}

@@ -1,0 +1,436 @@
+// TCGplayer Scraper Database Schema
+//
+// This schema defines tables for ML training data collection:
+// - Live listings (for Sniper model)
+// - Social signals (for Sentiment model)
+// - Tournament data (for Meta model)
+// - Cross-platform prices (for Arbitrage model)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE CARD DATA
+// ============================================
+
+model Card {
+  id              String   @id // TCGplayer product ID
+  name            String
+  game            String   // onepiece, pokemon, mtg, etc.
+  setCode         String
+  setName         String?
+  cardNumber      String?
+  rarity          String?
+  imageUrl        String?
+  tcgplayerUrl    String?
+
+  // Current prices
+  marketPrice     Decimal? @db.Decimal(10, 2)
+  lowPrice        Decimal? @db.Decimal(10, 2)
+  midPrice        Decimal? @db.Decimal(10, 2)
+  highPrice       Decimal? @db.Decimal(10, 2)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  listings        Listing[]
+  listingSnapshots ListingSnapshot[]
+  socialMentions  SocialMention[]
+  deckCards       DeckCard[]
+  priceHistory    PriceHistory[]
+  crossPlatformPrices CrossPlatformPrice[]
+
+  @@index([game])
+  @@index([setCode])
+  @@index([name])
+}
+
+// ============================================
+// LISTING DATA (for Sniper Model)
+// ============================================
+
+model Listing {
+  id              String   @id @default(cuid())
+  cardId          String
+  card            Card     @relation(fields: [cardId], references: [id])
+
+  // Seller info
+  sellerId        String
+  sellerName      String
+  sellerRating    Decimal  @db.Decimal(3, 2) // 0.00 - 5.00
+  sellerSalesCount Int
+
+  // Listing details
+  price           Decimal  @db.Decimal(10, 2)
+  condition       String   // NM, LP, MP, HP, DMG
+  quantity        Int
+  shippingCost    Decimal  @db.Decimal(10, 2) @default(0)
+  language        String   @default("English")
+  isFeatured      Boolean  @default(false)
+
+  // Pricing context at time of listing
+  marketPriceAtListing Decimal? @db.Decimal(10, 2)
+  lowPriceAtListing    Decimal? @db.Decimal(10, 2)
+
+  // Tracking
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  isActive        Boolean  @default(true)
+
+  // For training: outcome tracking
+  soldAt          DateTime?
+  timeToSellMinutes Int?
+
+  @@unique([cardId, sellerId, price, condition])
+  @@index([cardId])
+  @@index([sellerId])
+  @@index([isActive])
+  @@index([firstSeenAt])
+}
+
+model ListingSnapshot {
+  id              String   @id @default(cuid())
+  cardId          String
+  card            Card     @relation(fields: [cardId], references: [id])
+
+  snapshotAt      DateTime @default(now())
+
+  // Aggregate stats at snapshot time
+  listingCount    Int
+  avgPrice        Decimal  @db.Decimal(10, 2)
+  minPrice        Decimal  @db.Decimal(10, 2)
+  maxPrice        Decimal  @db.Decimal(10, 2)
+  marketPrice     Decimal  @db.Decimal(10, 2)
+
+  // Listings JSON (for historical reference)
+  listingsJson    Json?
+
+  @@index([cardId])
+  @@index([snapshotAt])
+}
+
+// ============================================
+// SOCIAL SIGNALS (for Sentiment Model)
+// ============================================
+
+model SocialMention {
+  id              String   @id @default(cuid())
+  cardId          String?
+  card            Card?    @relation(fields: [cardId], references: [id])
+
+  // Source info
+  platform        String   // reddit, youtube, twitter
+  postId          String   // Platform-specific ID
+  postUrl         String
+
+  // Content
+  title           String?
+  content         String?
+  author          String?
+
+  // Engagement metrics
+  score           Int      @default(0)     // Upvotes, likes
+  commentCount    Int      @default(0)
+  viewCount       Int      @default(0)     // YouTube only
+  upvoteRatio     Decimal? @db.Decimal(3, 2) // Reddit only
+
+  // Classification
+  isPriceDiscussion Boolean @default(false)
+  sentiment       Decimal? @db.Decimal(3, 2) // -1.00 to 1.00
+  cardMentions    String[] // Extracted card names/IDs
+
+  // Metadata
+  game            String
+  subreddit       String?  // Reddit only
+  channelId       String?  // YouTube only
+  channelName     String?  // YouTube only
+
+  postedAt        DateTime
+  collectedAt     DateTime @default(now())
+
+  @@unique([platform, postId])
+  @@index([cardId])
+  @@index([platform])
+  @@index([game])
+  @@index([postedAt])
+  @@index([isPriceDiscussion])
+}
+
+// ============================================
+// TOURNAMENT DATA (for Meta Model)
+// ============================================
+
+model Tournament {
+  id              String   @id
+  name            String
+  game            String
+  format          String?
+  date            DateTime
+  playerCount     Int
+
+  country         String?
+  city            String?
+  organizer       String?
+  isOnline        Boolean  @default(false)
+
+  // Source
+  source          String   @default("limitless") // limitless, melee, etc.
+  sourceUrl       String?
+
+  collectedAt     DateTime @default(now())
+
+  // Relations
+  standings       TournamentStanding[]
+  decklists       Decklist[]
+
+  @@index([game])
+  @@index([date])
+  @@index([format])
+}
+
+model TournamentStanding {
+  id              String   @id @default(cuid())
+  tournamentId    String
+  tournament      Tournament @relation(fields: [tournamentId], references: [id])
+
+  playerId        String
+  playerName      String
+  placement       Int
+  record          String?  // e.g., "7-2-0"
+
+  @@unique([tournamentId, playerId])
+  @@index([tournamentId])
+  @@index([placement])
+}
+
+model Decklist {
+  id              String   @id @default(cuid())
+  tournamentId    String
+  tournament      Tournament @relation(fields: [tournamentId], references: [id])
+
+  playerId        String
+  playerName      String
+  placement       Int
+  archetype       String?
+
+  collectedAt     DateTime @default(now())
+
+  // Relations
+  cards           DeckCard[]
+
+  @@index([tournamentId])
+  @@index([archetype])
+  @@index([placement])
+}
+
+model DeckCard {
+  id              String   @id @default(cuid())
+  decklistId      String
+  decklist        Decklist @relation(fields: [decklistId], references: [id])
+
+  cardId          String?  // Matched card ID
+  card            Card?    @relation(fields: [cardId], references: [id])
+
+  cardName        String
+  setCode         String
+  cardNumber      String
+  quantity        Int
+  isMainDeck      Boolean  @default(true)
+
+  @@index([decklistId])
+  @@index([cardId])
+  @@index([cardName])
+}
+
+// ============================================
+// CROSS-PLATFORM DATA (for Arbitrage Model)
+// ============================================
+
+model CrossPlatformPrice {
+  id              String   @id @default(cuid())
+  cardId          String
+  card            Card     @relation(fields: [cardId], references: [id])
+
+  // TCGplayer prices (USD)
+  tcgplayerPriceUsd Decimal @db.Decimal(10, 2)
+  tcgplayerLowUsd   Decimal @db.Decimal(10, 2)
+
+  // Cardmarket prices (EUR and converted)
+  cardmarketPriceEur Decimal @db.Decimal(10, 2)
+  cardmarketPriceUsd Decimal @db.Decimal(10, 2)
+  cardmarketLowEur   Decimal @db.Decimal(10, 2)
+  cardmarketLowUsd   Decimal @db.Decimal(10, 2)
+
+  // Arbitrage metrics
+  priceDiffUsd       Decimal @db.Decimal(10, 2)
+  priceDiffPercent   Decimal @db.Decimal(5, 2)
+  estimatedProfit    Decimal @db.Decimal(10, 2)
+  arbitrageDirection String  // BUY_CARDMARKET, BUY_TCGPLAYER, NO_OPPORTUNITY
+
+  // FX rate used
+  fxRateEurUsd       Decimal @db.Decimal(6, 4)
+
+  collectedAt        DateTime @default(now())
+
+  @@index([cardId])
+  @@index([arbitrageDirection])
+  @@index([collectedAt])
+}
+
+model CardmarketListing {
+  id              String   @id @default(cuid())
+  cardmarketId    String
+  cardId          String?  // Matched card ID
+
+  name            String
+  setCode         String
+  setName         String?
+  rarity          String?
+
+  // Prices (EUR)
+  priceEur        Decimal  @db.Decimal(10, 2)
+  trendEur        Decimal  @db.Decimal(10, 2)
+  avg1dEur        Decimal? @db.Decimal(10, 2)
+  avg7dEur        Decimal? @db.Decimal(10, 2)
+  avg30dEur       Decimal? @db.Decimal(10, 2)
+  lowEur          Decimal  @db.Decimal(10, 2)
+
+  // Converted
+  priceUsd        Decimal  @db.Decimal(10, 2)
+  priceGbp        Decimal  @db.Decimal(10, 2)
+
+  listingCount    Int
+  url             String
+
+  collectedAt     DateTime @default(now())
+
+  @@index([cardmarketId])
+  @@index([cardId])
+  @@index([setCode])
+}
+
+// ============================================
+// PRICE HISTORY (for all models)
+// ============================================
+
+model PriceHistory {
+  id              String   @id @default(cuid())
+  cardId          String
+  card            Card     @relation(fields: [cardId], references: [id])
+
+  // Prices
+  marketPrice     Decimal  @db.Decimal(10, 2)
+  lowPrice        Decimal  @db.Decimal(10, 2)
+  midPrice        Decimal? @db.Decimal(10, 2)
+  highPrice       Decimal? @db.Decimal(10, 2)
+
+  // Source
+  source          String   @default("tcgplayer") // tcgplayer, cardmarket
+
+  recordedAt      DateTime @default(now())
+
+  @@index([cardId])
+  @@index([recordedAt])
+  @@index([source])
+}
+
+// ============================================
+// META STATISTICS (pre-computed)
+// ============================================
+
+model CardMetaStats {
+  id              String   @id @default(cuid())
+  cardId          String
+  cardName        String
+  game            String
+
+  // Period
+  periodStart     DateTime
+  periodEnd       DateTime
+  periodDays      Int
+
+  // Deck statistics
+  deckCount       Int
+  top8Count       Int
+  top4Count       Int
+  winnerCount     Int
+  totalTournaments Int
+
+  // Rates
+  deckInclusionRate Decimal @db.Decimal(5, 4)
+  top8Rate          Decimal @db.Decimal(5, 4)
+  avgCopiesPerDeck  Decimal @db.Decimal(3, 1)
+  archetypeDiversity Int
+
+  computedAt      DateTime @default(now())
+
+  @@unique([cardId, periodStart, periodEnd])
+  @@index([cardId])
+  @@index([game])
+  @@index([computedAt])
+}
+
+// ============================================
+// TRAINING DATA EXPORTS
+// ============================================
+
+model TrainingDataExport {
+  id              String   @id @default(cuid())
+
+  modelType       String   // sniper, sentiment, meta, arbitrage
+  exportFormat    String   // csv, parquet, tfrecord
+
+  // Export parameters
+  dateRangeStart  DateTime
+  dateRangeEnd    DateTime
+  rowCount        Int
+  featureCount    Int
+
+  // File info
+  filePath        String
+  fileSizeBytes   BigInt
+  checksum        String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([modelType])
+  @@index([createdAt])
+}
+
+// ============================================
+// COLLECTION JOB TRACKING
+// ============================================
+
+model CollectionJob {
+  id              String   @id @default(cuid())
+
+  jobType         String   // listings, social, tournament, cardmarket
+  game            String?
+
+  status          String   // pending, running, completed, failed
+
+  // Progress
+  itemsProcessed  Int      @default(0)
+  itemsTotal      Int?
+  errorCount      Int      @default(0)
+
+  // Timing
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  // Error tracking
+  lastError       String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([jobType])
+  @@index([status])
+  @@index([createdAt])
+}

@@ -1,0 +1,136 @@
+{
+  "scraping": {
+    "enabled": true,
+    "schedule": "0 3 * * *",
+    "timezone": "UTC",
+    "fallback_schedule": "0 11 * * *",
+    "max_daily_attempts": 2
+  },
+  "limits": {
+    "max_cards_per_day": 100,
+    "min_delay_seconds": 5,
+    "max_delay_seconds": 10,
+    "max_consecutive_failures": 5,
+    "session_timeout_minutes": 30
+  },
+  "cache": {
+    "skip_if_fresher_than_hours": 24,
+    "stale_while_revalidate_hours": 72,
+    "hard_expiry_days": 7
+  },
+  "browser": {
+    "headless": true,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "locale": "en-GB"
+  },
+  "targeting": {
+    "variants": ["V.2", "V.3"],
+    "language": "English",
+    "match_by": ["card_number", "pricing", "language"],
+    "exclude_variants": ["V.1"],
+    "min_price_eur": 0.50,
+    "require_available": true,
+    "language_filter": {
+      "enabled": false,
+      "preferred": "English",
+      "fallback": "Japanese",
+      "notes": "V2/V3 variants are English-only by definition. Language filtering only needed for V1 base cards."
+    },
+    "multi_language_sets": ["OP01", "OP02", "OP03", "OP04", "OP05", "EB01"],
+    "v2v3_english_only": true
+  },
+  "watchlist": {
+    "secret_rares": {
+      "description": "High-value secret rare alternate arts",
+      "cards": [
+        {"card_number": "OP01-120", "name": "Shanks", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP01-121", "name": "Shanks (Manga)", "variants": ["V.2"]},
+        {"card_number": "OP02-120", "name": "Portgas D. Ace", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP02-121", "name": "Ace (Manga)", "variants": ["V.2"]},
+        {"card_number": "OP03-099", "name": "Charlotte Katakuri", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP04-119", "name": "Yamato", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP05-119", "name": "Monkey D. Luffy", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP06-119", "name": "Rob Lucci", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP07-119", "name": "Enel", "variants": ["V.2", "V.3"]}
+      ]
+    },
+    "leaders": {
+      "description": "Leader card alternate arts",
+      "cards": [
+        {"card_number": "OP01-001", "name": "Roronoa Zoro", "variants": ["V.2"]},
+        {"card_number": "OP01-002", "name": "Trafalgar Law", "variants": ["V.2"]},
+        {"card_number": "OP01-003", "name": "Monkey D. Luffy", "variants": ["V.2", "V.3"]},
+        {"card_number": "OP02-001", "name": "Edward Newgate", "variants": ["V.2"]},
+        {"card_number": "OP02-002", "name": "Kaido", "variants": ["V.2"]},
+        {"card_number": "OP03-001", "name": "Charlotte Katakuri", "variants": ["V.2"]},
+        {"card_number": "OP03-021", "name": "Nami", "variants": ["V.2"]},
+        {"card_number": "OP03-040", "name": "Sakazuki", "variants": ["V.2"]},
+        {"card_number": "OP04-001", "name": "Queen", "variants": ["V.2"]},
+        {"card_number": "OP04-019", "name": "Sanji", "variants": ["V.2"]}
+      ]
+    },
+    "super_rares": {
+      "description": "Super rare alternate arts (SR parallels)",
+      "cards": [
+        {"card_number": "OP01-025", "name": "Roronoa Zoro", "variants": ["V.2"]},
+        {"card_number": "OP01-070", "name": "Dracule Mihawk", "variants": ["V.2"]},
+        {"card_number": "OP01-078", "name": "Boa Hancock", "variants": ["V.2"]},
+        {"card_number": "OP01-094", "name": "Kaido", "variants": ["V.2"]},
+        {"card_number": "OP02-099", "name": "Portgas D. Ace", "variants": ["V.2"]},
+        {"card_number": "OP02-114", "name": "Edward Newgate", "variants": ["V.2"]},
+        {"card_number": "OP03-092", "name": "Charlotte Linlin", "variants": ["V.2"]},
+        {"card_number": "OP04-083", "name": "Sabo", "variants": ["V.2"]},
+        {"card_number": "OP05-100", "name": "Trafalgar Law", "variants": ["V.2"]}
+      ]
+    },
+    "sp_cards": {
+      "description": "Special art reprints from later sets",
+      "cards": [
+        {"card_number": "OP01-051", "name": "Nami", "release_set": "OP03", "variants": ["SP"]},
+        {"card_number": "OP02-036", "name": "Makino", "release_set": "OP03", "variants": ["SP"]},
+        {"card_number": "OP01-017", "name": "Sanji", "release_set": "OP04", "variants": ["SP"]},
+        {"card_number": "OP01-025", "name": "Roronoa Zoro", "release_set": "OP05", "variants": ["SP"]},
+        {"card_number": "OP01-016", "name": "Usopp", "release_set": "OP06", "variants": ["SP"]}
+      ]
+    },
+    "manga_arts": {
+      "description": "Manga panel alternate arts",
+      "cards": [
+        {"card_number": "OP01-120", "name": "Shanks (Manga)", "variants": ["Manga"]},
+        {"card_number": "OP02-120", "name": "Ace (Manga)", "variants": ["Manga"]},
+        {"card_number": "OP03-099", "name": "Katakuri (Manga)", "variants": ["Manga"]}
+      ]
+    }
+  },
+  "url_patterns": {
+    "base_url": "https://www.cardmarket.com/en/OnePiece/Products/Singles",
+    "variant_suffix": {
+      "V.1": "-V1",
+      "V.2": "-V2",
+      "V.3": "-V3",
+      "SP": "-V2",
+      "Manga": "-V2"
+    },
+    "example_urls": {
+      "OP01-120-V2": "/Romance-Dawn/Shanks-OP01-120-V2",
+      "OP01-120-V3": "/Romance-Dawn/Shanks-OP01-120-V3",
+      "OP01-003-V2": "/Romance-Dawn/MonkeyDLuffy-OP01-003-V2"
+    }
+  },
+  "sets": {
+    "OP01": {"name": "Romance Dawn", "slug": "Romance-Dawn"},
+    "OP02": {"name": "Paramount War", "slug": "Paramount-War"},
+    "OP03": {"name": "Pillars of Strength", "slug": "Pillars-of-Strength"},
+    "OP04": {"name": "Kingdoms of Intrigue", "slug": "Kingdoms-of-Intrigue"},
+    "OP05": {"name": "Awakening of the New Era", "slug": "Awakening-of-the-New-Era"},
+    "OP06": {"name": "Wings of the Captain", "slug": "Wings-of-the-Captain"},
+    "OP07": {"name": "500 Years in the Future", "slug": "500-Years-in-the-Future"},
+    "OP08": {"name": "Two Legends", "slug": "Two-Legends"},
+    "EB01": {"name": "Memorial Collection", "slug": "Memorial-Collection"},
+    "EB02": {"name": "Extra Booster Starter Deck Collaboration", "slug": "Starter-Deck-Collaboration"}
+  }
+}

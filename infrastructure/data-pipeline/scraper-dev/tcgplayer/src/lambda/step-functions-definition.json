@@ -1,0 +1,248 @@
+{
+  "Comment": "TCGplayer Price Pipeline - Fetch, Transform, Load workflow",
+  "StartAt": "InitializePipeline",
+  "States": {
+    "InitializePipeline": {
+      "Type": "Pass",
+      "Result": {
+        "pipelineId": "pipeline-${AWS::AccountId}-${AWS::Region}",
+        "timestamp": "2024-01-01T00:00:00Z"
+      },
+      "ResultPath": "$.metadata",
+      "Next": "DetermineGames"
+    },
+
+    "DetermineGames": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.games",
+          "IsPresent": true,
+          "Next": "FetchDataParallel"
+        }
+      ],
+      "Default": "SetDefaultGames"
+    },
+
+    "SetDefaultGames": {
+      "Type": "Pass",
+      "Result": ["onepiece", "pokemon", "mtg"],
+      "ResultPath": "$.games",
+      "Next": "FetchDataParallel"
+    },
+
+    "FetchDataParallel": {
+      "Type": "Map",
+      "ItemsPath": "$.games",
+      "MaxConcurrency": 3,
+      "Parameters": {
+        "game.$": "$$.Map.Item.Value",
+        "executionId.$": "$$.Execution.Id",
+        "preferJustTcg.$": "$.preferJustTcg",
+        "justTcgApiKey.$": "$.justTcgApiKey",
+        "storeToS3": true,
+        "s3Bucket.$": "$.s3Bucket"
+      },
+      "Iterator": {
+        "StartAt": "FetchGameData",
+        "States": {
+          "FetchGameData": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:tcgplayer-fetch",
+            "ResultPath": "$.fetchResult",
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "FetchFailed"
+              }
+            ],
+            "End": true
+          },
+          "FetchFailed": {
+            "Type": "Pass",
+            "Result": {
+              "success": false,
+              "error": "Fetch failed"
+            },
+            "ResultPath": "$.fetchResult",
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.fetchResults",
+      "Next": "CollectS3Keys"
+    },
+
+    "CollectS3Keys": {
+      "Type": "Pass",
+      "Parameters": {
+        "s3Keys.$": "$.fetchResults[*].fetchResult.s3Key",
+        "games.$": "$.games",
+        "executionId.$": "$$.Execution.Id",
+        "s3Bucket.$": "$.s3Bucket"
+      },
+      "Next": "TransformData"
+    },
+
+    "TransformData": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:tcgplayer-transform",
+      "Parameters": {
+        "s3Keys.$": "$.s3Keys",
+        "executionId.$": "$.executionId",
+        "storeToS3": true,
+        "s3Bucket.$": "$.s3Bucket",
+        "validateInput": true,
+        "validateOutput": true,
+        "calculateTradeIn": true,
+        "targetCurrency": "GBP"
+      },
+      "ResultPath": "$.transformResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "TransformFailed"
+        }
+      ],
+      "Next": "CheckTransformSuccess"
+    },
+
+    "TransformFailed": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "TRANSFORM_FAILED",
+        "error.$": "$.error"
+      },
+      "Next": "NotifyFailure"
+    },
+
+    "CheckTransformSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.transformResult.success",
+          "BooleanEquals": true,
+          "Next": "LoadToDatabase"
+        }
+      ],
+      "Default": "TransformFailed"
+    },
+
+    "LoadToDatabase": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:tcgplayer-load",
+      "Parameters": {
+        "s3Key.$": "$.transformResult.s3Key",
+        "executionId.$": "$.executionId",
+        "s3Bucket.$": "$.s3Bucket",
+        "trackPriceHistory": true,
+        "updateExisting": true
+      },
+      "ResultPath": "$.loadResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "LoadFailed"
+        }
+      ],
+      "Next": "CheckLoadSuccess"
+    },
+
+    "LoadFailed": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "LOAD_FAILED",
+        "error.$": "$.error"
+      },
+      "Next": "NotifyFailure"
+    },
+
+    "CheckLoadSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.loadResult.success",
+          "BooleanEquals": true,
+          "Next": "GenerateReport"
+        }
+      ],
+      "Default": "LoadFailed"
+    },
+
+    "GenerateReport": {
+      "Type": "Pass",
+      "Parameters": {
+        "status": "SUCCESS",
+        "executionId.$": "$.executionId",
+        "stats": {
+          "games.$": "$.games",
+          "fetchResults.$": "$.fetchResults[*].fetchResult",
+          "transformStats.$": "$.transformResult.stats",
+          "loadStats.$": "$.loadResult.stats"
+        },
+        "timestamp.$": "$$.State.EnteredTime"
+      },
+      "ResultPath": "$.report",
+      "Next": "NotifySuccess"
+    },
+
+    "NotifySuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:tcgplayer-pipeline-notifications",
+        "Message.$": "States.Format('Pipeline completed successfully. Execution: {}', $.executionId)",
+        "Subject": "TCGplayer Pipeline Success"
+      },
+      "ResultPath": null,
+      "Next": "PipelineSuccess"
+    },
+
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:tcgplayer-pipeline-notifications",
+        "Message.$": "States.Format('Pipeline failed: {}', $.error)",
+        "Subject": "TCGplayer Pipeline Failed"
+      },
+      "ResultPath": null,
+      "Next": "PipelineFailed"
+    },
+
+    "PipelineSuccess": {
+      "Type": "Succeed"
+    },
+
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "PipelineExecutionFailed",
+      "Cause": "The pipeline failed during execution"
+    }
+  }
+}

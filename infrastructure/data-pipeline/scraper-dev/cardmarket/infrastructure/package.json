@@ -1,0 +1,25 @@
+{
+  "name": "cardmarket-pipeline-cdk",
+  "version": "1.0.0",
+  "description": "AWS CDK infrastructure for CardMarket scraper pipeline",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy",
+    "diff": "cdk diff",
+    "bootstrap": "cdk bootstrap"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.118.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "aws-cdk": "^2.118.0",
+    "ts-node": "^10.9.x",
+    "typescript": "^5.x"
+  }
+}

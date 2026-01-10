@@ -1,0 +1,610 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cardmarket Price Scraping Pipeline Infrastructure
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+      - development
+
+  DatabaseSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing database credentials
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for Lambda functions
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for Lambda functions (private subnets)
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for Lambda functions
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 900
+    MemorySize: 2048
+    Architectures:
+      - arm64
+    VpcConfig:
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment
+        DATABASE_SECRET_ARN: !Ref DatabaseSecretArn
+        S3_BUCKET: !Ref ScraperDataBucket
+        SQS_QUEUE_URL: !Ref ScrapeJobQueue
+        SQS_DLQ_URL: !Ref ScrapeJobDLQ
+
+Resources:
+  # ============================================================================
+  # S3 BUCKET
+  # ============================================================================
+  ScraperDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cardmarket-scraper-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: MoveRawToGlacier
+            Status: Enabled
+            Prefix: raw/
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 30
+          - Id: DeleteDebugFiles
+            Status: Enabled
+            Prefix: debug/
+            ExpirationInDays: 7
+          - Id: ExpireOldTraining
+            Status: Enabled
+            Prefix: training/exports/daily/
+            ExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: cardmarket-scraper
+
+  # ============================================================================
+  # SQS QUEUES
+  # ============================================================================
+  ScrapeJobDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub cardmarket-scraper-dlq-${Environment}
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  ScrapeJobQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub cardmarket-scraper-queue-${Environment}
+      VisibilityTimeout: 900  # 15 minutes (matches Lambda timeout)
+      MessageRetentionPeriod: 1209600  # 14 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ScrapeJobDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================================================
+  # LAMBDA FUNCTIONS
+  # ============================================================================
+  ScraperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-scraper-${Environment}
+      Handler: src/pipeline/lambda-handler.stepFunctions
+      CodeUri: ./
+      MemorySize: 2048
+      Timeout: 900
+      Layers:
+        - !Ref PlaywrightLayer
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ScraperDataBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScrapeJobQueue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScrapeJobDLQ.QueueName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+
+  StoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-store-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 512
+      Timeout: 60
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ScraperDataBucket
+
+  TransformFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-transform-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 1024
+      Timeout: 300
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+
+  LoadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-load-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 512
+      Timeout: 300
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+
+  ExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-export-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 2048
+      Timeout: 600
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ScraperDataBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+
+  SQSProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-sqs-processor-${Environment}
+      Handler: src/pipeline/lambda-handler.sqs
+      CodeUri: ./
+      MemorySize: 2048
+      Timeout: 900
+      Layers:
+        - !Ref PlaywrightLayer
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScrapeJobQueue.Arn
+            BatchSize: 1
+            MaximumBatchingWindowInSeconds: 0
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ScraperDataBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScrapeJobDLQ.QueueName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+
+  MetricsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-metrics-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 256
+      Timeout: 60
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+                - sns:Publish
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+
+  ErrorHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub cardmarket-error-handler-${Environment}
+      Handler: src/pipeline/lambda-handler.handler
+      CodeUri: ./
+      MemorySize: 256
+      Timeout: 60
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScrapeJobDLQ.QueueName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: !Ref AlertTopic
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref DatabaseSecretArn
+
+  # Playwright Layer (pre-built or custom)
+  PlaywrightLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub playwright-chromium-${Environment}
+      Description: Playwright with Chromium browser
+      CompatibleRuntimes:
+        - nodejs20.x
+      CompatibleArchitectures:
+        - arm64
+      Content:
+        S3Bucket: !Ref ScraperDataBucket
+        S3Key: layers/playwright-chromium.zip
+
+  # ============================================================================
+  # STEP FUNCTIONS
+  # ============================================================================
+  PipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub CardmarketPipeline-${Environment}
+      DefinitionUri: ./step-functions.json
+      DefinitionSubstitutions:
+        ScraperFunctionArn: !GetAtt ScraperFunction.Arn
+        StoreFunctionArn: !GetAtt StoreFunction.Arn
+        TransformFunctionArn: !GetAtt TransformFunction.Arn
+        LoadFunctionArn: !GetAtt LoadFunction.Arn
+        ExportFunctionArn: !GetAtt ExportFunction.Arn
+        MetricsFunctionArn: !GetAtt MetricsFunction.Arn
+        ErrorHandlerFunctionArn: !GetAtt ErrorHandlerFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ScraperFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref StoreFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref TransformFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LoadFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ExportFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref MetricsFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ErrorHandlerFunction
+      Tags:
+        Environment: !Ref Environment
+        Application: cardmarket-scraper
+
+  # ============================================================================
+  # EVENTBRIDGE SCHEDULE
+  # ============================================================================
+  MorningScrapeSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub cardmarket-morning-scrape-${Environment}
+      Description: Morning scrape at 8 AM UTC
+      ScheduleExpression: cron(0 8 * * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt PipelineStateMachine.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: |
+          {
+            "sets": ["OP01", "OP02", "OP03", "OP04", "OP05", "OP06", "OP07"],
+            "options": {
+              "maxCardsPerSet": 500,
+              "includeArticles": false,
+              "storeRawToS3": true,
+              "loadToDatabase": true,
+              "generateTrainingExport": false
+            }
+          }
+
+  EveningScrapeSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub cardmarket-evening-scrape-${Environment}
+      Description: Evening scrape at 8 PM UTC
+      ScheduleExpression: cron(0 20 * * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt PipelineStateMachine.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: |
+          {
+            "sets": ["OP08", "OP09", "OP10", "OP11", "OP12", "OP13", "EB01", "EB02"],
+            "options": {
+              "maxCardsPerSet": 500,
+              "includeArticles": false,
+              "storeRawToS3": true,
+              "loadToDatabase": true,
+              "generateTrainingExport": true
+            }
+          }
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub cardmarket-scheduler-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartStateMachine
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !GetAtt PipelineStateMachine.Arn
+
+  # ============================================================================
+  # SNS ALERTING
+  # ============================================================================
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub cardmarket-alerts-${Environment}
+      DisplayName: Cardmarket Scraper Alerts
+
+  # ============================================================================
+  # CLOUDWATCH ALARMS
+  # ============================================================================
+  ScrapeErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub CardmarketScrapeErrors-${Environment}
+      AlarmDescription: Scraper error rate too high
+      Namespace: CardmarketPipeline
+      MetricName: ScrapeErrors
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+
+  DLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub CardmarketDLQDepth-${Environment}
+      AlarmDescription: DLQ has messages
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ScrapeJobDLQ.QueueName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+
+  PipelineFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub CardmarketPipelineFailures-${Environment}
+      AlarmDescription: Pipeline execution failed
+      Namespace: CardmarketPipeline
+      MetricName: PipelineFailures
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # ============================================================================
+  # CLOUDWATCH DASHBOARD
+  # ============================================================================
+  PipelineDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub CardmarketPipeline-${Environment}
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Scraping Metrics",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["CardmarketPipeline", "CardsScraped", "Environment", "${Environment}"],
+                  [".", "ScrapeErrors", ".", "."],
+                  [".", "RequestsBlocked", ".", "."]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Database Operations",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["CardmarketPipeline", "DatabaseUpserts", "Environment", "${Environment}"],
+                  [".", "HistoryInserts", ".", "."],
+                  [".", "LoadErrors", ".", "."]
+                ],
+                "period": 3600,
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Queue Metrics",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "cardmarket-scraper-queue-${Environment}"],
+                  [".", "ApproximateNumberOfMessagesVisible", ".", "cardmarket-scraper-dlq-${Environment}"]
+                ],
+                "period": 300,
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Pipeline Duration",
+                "view": "timeSeries",
+                "stacked": false,
+                "metrics": [
+                  ["CardmarketPipeline", "PipelineDurationMs", "Environment", "${Environment}"]
+                ],
+                "period": 3600,
+                "stat": "Average",
+                "region": "${AWS::Region}"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "title": "Lambda Errors",
+                "view": "timeSeries",
+                "stacked": true,
+                "metrics": [
+                  ["AWS/Lambda", "Errors", "FunctionName", "cardmarket-scraper-${Environment}"],
+                  [".", ".", ".", "cardmarket-load-${Environment}"],
+                  [".", ".", ".", "cardmarket-sqs-processor-${Environment}"]
+                ],
+                "period": 300,
+                "region": "${AWS::Region}"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  ScraperFunctionArn:
+    Description: Scraper Lambda function ARN
+    Value: !GetAtt ScraperFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ScraperFunctionArn
+
+  StateMachineArn:
+    Description: Step Functions state machine ARN
+    Value: !GetAtt PipelineStateMachine.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-StateMachineArn
+
+  S3BucketName:
+    Description: S3 bucket for scraper data
+    Value: !Ref ScraperDataBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-S3BucketName
+
+  SQSQueueUrl:
+    Description: SQS queue URL for scrape jobs
+    Value: !Ref ScrapeJobQueue
+    Export:
+      Name: !Sub ${AWS::StackName}-SQSQueueUrl
+
+  AlertTopicArn:
+    Description: SNS topic ARN for alerts
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-AlertTopicArn
+
+  DashboardUrl:
+    Description: CloudWatch dashboard URL
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=CardmarketPipeline-${Environment}

@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "setCode": "OP01",
+    "scrapedAt": "2026-01-09T16:06:17.881Z",
+    "cardCount": 0,
+    "articleCount": 0,
+    "stats": {
+      "cardsScraped": 0,
+      "articlesScraped": 0,
+      "pagesProcessed": 1,
+      "duration": 36852,
+      "requestStats": {
+        "totalRequests": 1,
+        "successfulRequests": 0,
+        "failedRequests": 1,
+        "retriedRequests": 3,
+        "blockedRequests": 4,
+        "averageLatency": 0,
+        "proxyRotations": 0
+      },
+      "parserStats": {
+        "selectorsAttempted": 0,
+        "selectorSuccesses": 0,
+        "regexAttempted": 0,
+        "regexSuccesses": 0,
+        "fallbacksUsed": 0,
+        "errors": []
+      }
+    },
+    "errors": [
+      "Failed to fetch https://www.cardmarket.com/en/OnePiece/Products/Singles/Romance-Dawn: 403 Forbidden"
+    ]
+  },
+  "cards": [],
+  "articles": []
+}

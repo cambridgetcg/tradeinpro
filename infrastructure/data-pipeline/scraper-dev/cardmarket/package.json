@@ -1,0 +1,71 @@
+{
+  "name": "cardmarket-scraper-dev",
+  "version": "1.0.0",
+  "description": "Cardmarket web scraper development workspace",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cardmarket-scraper": "dist/cli/runner.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run tests/integration",
+    "test:single": "tsx scripts/test-scraper.ts",
+    "build": "tsc",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "scrape": "tsx src/cli/runner.ts",
+    "scrape:test": "tsx src/cli/runner.ts OP01 --max-cards 5 --max-pages 1 --verbose",
+    "scrape:targeted": "tsx src/services/targeted-scraper.ts",
+    "scrape:targeted:test": "tsx src/services/targeted-scraper.ts --test --limit=3",
+    "pipeline": "tsx src/pipeline/run-pipeline.ts",
+    "pipeline:test": "tsx src/pipeline/run-pipeline.ts --test",
+    "pipeline:dry-run": "tsx src/pipeline/run-pipeline.ts --dry-run",
+    "pipeline:export": "tsx src/pipeline/run-pipeline.ts --export",
+    "daily-job": "tsx src/scheduler/daily-job.ts",
+    "training:export": "tsx src/pipeline/training-exporter.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.x",
+    "@aws-sdk/client-dynamodb": "^3.x",
+    "@aws-sdk/client-kinesis": "^3.x",
+    "@aws-sdk/client-s3": "^3.x",
+    "@aws-sdk/client-secrets-manager": "^3.x",
+    "@aws-sdk/client-sqs": "^3.x",
+    "@aws-sdk/util-dynamodb": "^3.x",
+    "axios": "^1.6.x",
+    "bottleneck": "^2.19.x",
+    "cheerio": "^1.0.0-rc.12",
+    "got": "^14.x",
+    "https-proxy-agent": "^7.x",
+    "p-queue": "^8.x",
+    "playwright": "^1.40.x",
+    "puppeteer": "^21.x",
+    "puppeteer-extra": "^3.3.x",
+    "puppeteer-extra-plugin-stealth": "^2.11.x",
+    "user-agents": "^1.1.x",
+    "uuid": "^9.x",
+    "@prisma/client": "^5.x",
+    "zlib": "^1.0.x"
+  },
+  "devDependencies": {
+    "prisma": "^5.x",
+    "@types/aws-lambda": "^8.x",
+    "@types/node": "^20.x",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "@vitest/coverage-v8": "^1.x",
+    "eslint": "^8.x",
+    "msw": "^2.x",
+    "nock": "^13.x",
+    "prettier": "^3.x",
+    "tsx": "^4.x",
+    "typescript": "^5.x",
+    "vitest": "^1.x"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

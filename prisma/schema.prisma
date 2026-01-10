@@ -125,6 +125,9 @@ model CardPriceV2 {
   createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz
   lastUpdated        DateTime? @default(now()) @map("last_updated") @db.Timestamptz
 
+  // Relations
+  neuralDeals        NeuralDeal[]
+
   @@index([game], map: "idx_card_prices_v2_game")
   @@index([releaseSet], map: "idx_card_prices_v2_release_set")
   @@index([fullCardNumber], map: "idx_card_prices_v2_full_card_number")
@@ -775,4 +778,995 @@ model IndexWeightHistory {
   @@index([game, snapshotDate], map: "idx_weight_history_game_date")
   @@index([cardId, snapshotDate], map: "idx_weight_history_card_date")
   @@map("index_weight_history")
+}
+
+// ============================================================================
+// NEURAL NETWORK DEAL IDENTIFICATION SYSTEM
+// AI-powered market intelligence and deal detection
+// ============================================================================
+
+// Store model predictions with confidence intervals
+model NeuralPrediction {
+  id              String   @id @default(cuid())
+
+  // Card identification
+  cardId          String   @map("card_id")
+  game            String   @default("onepiece")
+
+  // Price predictions
+  price24h        Decimal? @map("price_24h") @db.Decimal(10, 2)
+  price7d         Decimal? @map("price_7d") @db.Decimal(10, 2)
+  price30d        Decimal? @map("price_30d") @db.Decimal(10, 2)
+
+  // Confidence intervals (0-1)
+  confidence24h   Decimal? @map("confidence_24h") @db.Decimal(5, 4)
+  confidence7d    Decimal? @map("confidence_7d") @db.Decimal(5, 4)
+  confidence30d   Decimal? @map("confidence_30d") @db.Decimal(5, 4)
+
+  // Model metadata
+  modelVersion    String   @map("model_version")
+  featureVector   Json?    @map("feature_vector") // Stored for explainability
+
+  // Timestamps
+  predictedAt     DateTime @default(now()) @map("predicted_at") @db.Timestamptz
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+
+  @@index([cardId, predictedAt], map: "idx_predictions_card")
+  @@index([expiresAt], map: "idx_predictions_expiry")
+  @@map("neural_predictions")
+}
+
+// Store identified market deals
+model NeuralDeal {
+  id              String   @id @default(cuid())
+
+  // Card identification
+  cardId          String   @map("card_id")
+  game            String   @default("onepiece")
+
+  // Deal classification
+  dealType        String   @map("deal_type")  // ARBITRAGE_CROSS_MARKET, UNDERVALUED_STATISTICAL, etc.
+  confidence      Decimal  @db.Decimal(5, 4)
+  expectedReturn  Decimal  @map("expected_return") @db.Decimal(8, 4)
+  timeHorizon     String   @map("time_horizon")  // IMMEDIATE, SHORT, MEDIUM, LONG
+  riskLevel       String   @map("risk_level")    // LOW, MEDIUM, HIGH
+
+  // Action details
+  actionType      String   @map("action_type")   // BUY, SELL, BUY_SELL, HOLD
+  buyMarket       String?  @map("buy_market")
+  buyPrice        Decimal? @map("buy_price") @db.Decimal(10, 2)
+  sellMarket      String?  @map("sell_market")
+  sellPrice       Decimal? @map("sell_price") @db.Decimal(10, 2)
+
+  // Metadata
+  metadata        Json?
+  featureImportance Json? @map("feature_importance")
+
+  // Lifecycle
+  status          String   @default("ACTIVE")  // ACTIVE, EXECUTED, EXPIRED, CANCELLED
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt       DateTime @map("expires_at") @db.Timestamptz
+  executedAt      DateTime? @map("executed_at") @db.Timestamptz
+  actualReturn    Decimal? @map("actual_return") @db.Decimal(8, 4)  // For model training feedback
+
+  // Annotation fields (for training feedback)
+  userRating      String?   @map("user_rating")      // 'good', 'bad', 'uncertain'
+  annotationNotes String?   @map("annotation_notes") @db.Text
+  annotationTags  String[]  @default([]) @map("annotation_tags")
+  annotatedAt     DateTime? @map("annotated_at") @db.Timestamptz
+  wasProfitable   Boolean?  @map("was_profitable")
+  profitAmount    Decimal?  @map("profit_amount") @db.Decimal(10, 2)
+
+  // Relation to card
+  card            CardPriceV2? @relation(fields: [cardId], references: [cardId])
+
+  @@index([cardId], map: "idx_deals_card")
+  @@index([dealType, status], map: "idx_deals_type")
+  @@index([status, expiresAt], map: "idx_deals_active")
+  @@index([confidence], map: "idx_deals_confidence")
+  @@map("neural_deals")
+}
+
+// Store model training history for versioning and rollback
+model NeuralModelHistory {
+  id                  String   @id @default(cuid())
+
+  // Model identification
+  modelVersion        String   @unique @map("model_version")
+
+  // Training metrics
+  trainingSamples     Int      @map("training_samples")
+  validationSamples   Int      @map("validation_samples")
+  dealTypeAccuracy    Decimal? @map("deal_type_accuracy") @db.Decimal(5, 4)
+  confidenceBrierScore Decimal? @map("confidence_brier_score") @db.Decimal(5, 4)
+  returnMae           Decimal? @map("return_mae") @db.Decimal(5, 4)
+  riskF1Score         Decimal? @map("risk_f1_score") @db.Decimal(5, 4)
+
+  // Model weights storage
+  weightsUrl          String?  @map("weights_url")  // S3 path to model weights
+
+  // Metadata
+  trainedAt           DateTime @default(now()) @map("trained_at") @db.Timestamptz
+  deployedAt          DateTime? @map("deployed_at") @db.Timestamptz
+  retiredAt           DateTime? @map("retired_at") @db.Timestamptz
+  notes               String?
+
+  @@map("neural_model_history")
+}
+
+// Model performance metrics for monitoring
+model NeuralModelMetrics {
+  id                  String   @id @default(cuid())
+
+  // Card and prediction info
+  cardId              String   @map("card_id")
+  modelVersion        String   @map("model_version")
+
+  // Predicted values
+  predictedDealType   String?  @map("predicted_deal_type")
+  predictedConfidence Decimal? @map("predicted_confidence") @db.Decimal(5, 4)
+  predictedReturn     Decimal? @map("predicted_return") @db.Decimal(8, 4)
+
+  // Actual outcomes (filled in later)
+  actualDealType      String?  @map("actual_deal_type")
+  actualReturn        Decimal? @map("actual_return") @db.Decimal(8, 4)
+  isCorrect           Boolean?
+
+  // Timestamp
+  timestamp           DateTime @default(now()) @db.Timestamptz
+
+  @@index([modelVersion, timestamp], map: "idx_metrics_model_time")
+  @@index([cardId], map: "idx_metrics_card")
+  @@map("neural_model_metrics")
+}
+
+// ============================================================================
+// API COMMERCIALIZATION INFRASTRUCTURE
+// Rate limiting, billing, and access control
+// ============================================================================
+
+// API keys for commercial access
+model ApiKey {
+  id              String   @id @default(cuid())
+
+  // Key details
+  keyHash         String   @unique @map("key_hash")   // SHA-256 of actual key
+  keyPrefix       String   @map("key_prefix")         // First 8 chars for identification
+  name            String
+
+  // Owner
+  userId          String?  @map("user_id")
+  organization    String?
+  email           String
+
+  // Tier & limits
+  tier            String   @default("free")  // free, developer, professional, enterprise, neural
+  rateLimitDaily  Int      @default(100) @map("rate_limit_daily")
+  rateLimitMinute Int      @default(10) @map("rate_limit_minute")
+
+  // Permissions
+  allowedEndpoints String[] @default(["*"]) @map("allowed_endpoints")
+  allowedGames    String[] @default(["onepiece"]) @map("allowed_games")
+  maxHistoryDays  Int      @default(0) @map("max_history_days")
+  bulkAccess      Boolean  @default(false) @map("bulk_access")
+  webhookAccess   Boolean  @default(false) @map("webhook_access")
+  streamingAccess Boolean  @default(false) @map("streaming_access")
+  neuralAccess    Boolean  @default(false) @map("neural_access")
+
+  // Lifecycle
+  status          String   @default("active")  // active, suspended, revoked
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+  lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz
+
+  // Billing
+  stripeCustomerId String? @map("stripe_customer_id")
+  billingEmail    String?  @map("billing_email")
+
+  // Usage tracking
+  usage           ApiUsage[]
+  webhooks        ApiWebhook[]
+
+  @@index([keyHash], map: "idx_api_keys_hash")
+  @@index([userId], map: "idx_api_keys_user")
+  @@index([status], map: "idx_api_keys_status")
+  @@map("api_keys")
+}
+
+// API usage tracking for billing and analytics
+model ApiUsage {
+  id              String   @id @default(cuid())
+
+  // Key reference
+  apiKeyId        String   @map("api_key_id")
+  apiKey          ApiKey   @relation(fields: [apiKeyId], references: [id])
+
+  // Request details
+  endpoint        String
+  method          String
+  statusCode      Int      @map("status_code")
+  responseTimeMs  Int      @map("response_time_ms")
+
+  // Billing
+  tier            String
+  billableUnits   Int      @default(1) @map("billable_units")
+
+  // Metadata
+  ipAddress       String?  @map("ip_address")
+  userAgent       String?  @map("user_agent")
+  requestTimestamp DateTime @default(now()) @map("request_timestamp") @db.Timestamptz
+
+  @@index([apiKeyId, requestTimestamp], map: "idx_usage_key")
+  @@index([apiKeyId, requestTimestamp], map: "idx_usage_billing")
+  @@map("api_usage")
+}
+
+// Webhook endpoints for price alerts
+model ApiWebhook {
+  id              String   @id @default(cuid())
+
+  // Key reference
+  apiKeyId        String   @map("api_key_id")
+  apiKey          ApiKey   @relation(fields: [apiKeyId], references: [id])
+
+  // Webhook configuration
+  url             String
+  events          String[] // PRICE_CHANGE, DEAL_ALERT, INDEX_MOVEMENT
+  secret          String   // For signature verification
+  isActive        Boolean  @default(true) @map("is_active")
+
+  // Filters
+  cardIds         String[] @map("card_ids")     // Optional: filter to specific cards
+  games           String[] @default(["onepiece"])
+  minPriceChange  Decimal? @map("min_price_change") @db.Decimal(8, 4)  // Minimum % change to trigger
+
+  // Delivery tracking
+  lastDeliveredAt DateTime? @map("last_delivered_at") @db.Timestamptz
+  failureCount    Int       @default(0) @map("failure_count")
+  lastError       String?   @map("last_error")
+
+  // Timestamps
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([apiKeyId], map: "idx_webhooks_key")
+  @@index([isActive], map: "idx_webhooks_active")
+  @@map("api_webhooks")
+}
+
+// Daily rate limit tracking (for fast lookups)
+model ApiRateLimit {
+  id              String   @id @default(cuid())
+
+  // Key reference
+  apiKeyId        String   @map("api_key_id")
+
+  // Date tracking
+  date            DateTime @db.Date
+
+  // Usage counters
+  dailyCount      Int      @default(0) @map("daily_count")
+  minuteCount     Int      @default(0) @map("minute_count")
+  minuteWindow    DateTime @map("minute_window") @db.Timestamptz
+
+  @@unique([apiKeyId, date])
+  @@index([apiKeyId, date], map: "idx_rate_limit_key_date")
+  @@map("api_rate_limits")
+}
+
+// ============================================================================
+// CARDMARKET DATA COLLECTION PIPELINE
+// Multi-market price collection for arbitrage detection and ML training
+// ============================================================================
+
+// Market prices from US sources (TCGplayer via OPTCG API and JustTCG)
+model MarketPriceUS {
+  id              Int       @id @default(autoincrement())
+  cardId          String    @map("card_id") @db.VarChar(50)
+  source          String    @db.VarChar(20) // 'optcg' | 'justtcg'
+
+  // Prices in USD
+  marketPrice     Decimal?  @map("market_price") @db.Decimal(10, 2)
+  lowPrice        Decimal?  @map("low_price") @db.Decimal(10, 2)
+  midPrice        Decimal?  @map("mid_price") @db.Decimal(10, 2)
+  highPrice       Decimal?  @map("high_price") @db.Decimal(10, 2)
+  inventoryPrice  Decimal?  @map("inventory_price") @db.Decimal(10, 2)
+
+  // Statistics (from JustTCG)
+  change24h       Decimal?  @map("change_24h") @db.Decimal(6, 4)
+  change7d        Decimal?  @map("change_7d") @db.Decimal(6, 4)
+  change30d       Decimal?  @map("change_30d") @db.Decimal(6, 4)
+  change90d       Decimal?  @map("change_90d") @db.Decimal(6, 4)
+  avgPrice        Decimal?  @map("avg_price") @db.Decimal(10, 2)
+  minPrice        Decimal?  @map("min_price") @db.Decimal(10, 2)
+  maxPrice        Decimal?  @map("max_price") @db.Decimal(10, 2)
+  stdDev          Decimal?  @map("std_dev") @db.Decimal(10, 2)
+  trendSlope      Decimal?  @map("trend_slope") @db.Decimal(10, 6)
+
+  // Volume/inventory signals (from JustTCG variants)
+  listingsCount       Int?      @map("listings_count")
+  conditionsAvailable Int?      @map("conditions_available")
+
+  // Metadata
+  collectedAt     DateTime  @default(now()) @map("collected_at")
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+
+  @@unique([cardId, source, collectedAt], map: "idx_market_prices_us_unique")
+  @@index([cardId], map: "idx_market_prices_us_card")
+  @@index([collectedAt(sort: Desc)], map: "idx_market_prices_us_collected")
+  @@map("market_prices_us")
+}
+
+// Market prices from EU sources (Cardmarket via CSV and Apify)
+model MarketPriceEU {
+  id              Int       @id @default(autoincrement())
+  cardId          String    @map("card_id") @db.VarChar(50)
+  source          String    @db.VarChar(20) // 'cardmarket_csv' | 'apify'
+
+  // Prices in EUR
+  trendPrice      Decimal?  @map("trend_price") @db.Decimal(10, 2)
+  avgPrice        Decimal?  @map("avg_price") @db.Decimal(10, 2)
+  lowPrice        Decimal?  @map("low_price") @db.Decimal(10, 2)
+
+  // Cardmarket specific averages
+  avg1d           Decimal?  @map("avg_1d") @db.Decimal(10, 2)
+  avg7d           Decimal?  @map("avg_7d") @db.Decimal(10, 2)
+  avg30d          Decimal?  @map("avg_30d") @db.Decimal(10, 2)
+
+  // Inventory signals (from Cardmarket CSV)
+  availableItems  Int?      @map("available_items")
+  availableFoils  Int?      @map("available_foils")
+
+  // Metadata
+  collectedAt     DateTime  @default(now()) @map("collected_at")
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+
+  @@unique([cardId, source, collectedAt], map: "idx_market_prices_eu_unique")
+  @@index([cardId], map: "idx_market_prices_eu_card")
+  @@index([collectedAt(sort: Desc)], map: "idx_market_prices_eu_collected")
+  @@map("market_prices_eu")
+}
+
+// Exchange rates for currency conversion
+model FXRate {
+  id             Int      @id @default(autoincrement())
+  baseCurrency   String   @default("GBP") @map("base_currency") @db.VarChar(3)
+  targetCurrency String   @map("target_currency") @db.VarChar(3)
+  rate           Decimal  @db.Decimal(12, 6)
+  collectedAt    DateTime @default(now()) @map("collected_at")
+
+  @@index([targetCurrency, collectedAt(sort: Desc)], map: "idx_fx_rates_pair")
+  @@index([collectedAt(sort: Desc)], map: "idx_fx_rates_collected")
+  @@map("fx_rates")
+}
+
+// Daily aggregated prices for ML training
+model PriceHistoryDaily {
+  id            Int      @id @default(autoincrement())
+  cardId        String   @map("card_id") @db.VarChar(50)
+  date          DateTime @db.Date
+
+  // US prices (in USD, converted to GBP)
+  usMarketUsd   Decimal? @map("us_market_usd") @db.Decimal(10, 2)
+  usLowUsd      Decimal? @map("us_low_usd") @db.Decimal(10, 2)
+  usMarketGbp   Decimal? @map("us_market_gbp") @db.Decimal(10, 2)
+  usLowGbp      Decimal? @map("us_low_gbp") @db.Decimal(10, 2)
+
+  // EU prices (in EUR, converted to GBP)
+  euTrendEur    Decimal? @map("eu_trend_eur") @db.Decimal(10, 2)
+  euLowEur      Decimal? @map("eu_low_eur") @db.Decimal(10, 2)
+  euTrendGbp    Decimal? @map("eu_trend_gbp") @db.Decimal(10, 2)
+  euLowGbp      Decimal? @map("eu_low_gbp") @db.Decimal(10, 2)
+
+  // Calculated spreads
+  spreadEuToUs  Decimal? @map("spread_eu_to_us") @db.Decimal(6, 4)
+  spreadUsToEu  Decimal? @map("spread_us_to_eu") @db.Decimal(6, 4)
+
+  // FX rates used
+  fxUsdGbp      Decimal? @map("fx_usd_gbp") @db.Decimal(12, 6)
+  fxEurGbp      Decimal? @map("fx_eur_gbp") @db.Decimal(12, 6)
+
+  // Volume/activity indicators
+  usListingsCount Int?   @map("us_listings_count")
+  euListingsCount Int?   @map("eu_listings_count")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([cardId, date], map: "idx_price_history_daily_unique")
+  @@index([cardId, date(sort: Desc)], map: "idx_price_history_daily_card")
+  @@index([date(sort: Desc)], map: "idx_price_history_daily_date")
+  @@map("price_history_daily")
+}
+
+// Detected cross-market arbitrage opportunities
+model ArbitrageOpportunity {
+  id               Int       @id @default(autoincrement())
+  cardId           String    @map("card_id") @db.VarChar(50)
+  detectedAt       DateTime  @default(now()) @map("detected_at")
+
+  // Buy side
+  buyMarket        String    @map("buy_market") @db.VarChar(50)
+  buyPrice         Decimal   @map("buy_price") @db.Decimal(10, 2)
+  buyCurrency      String    @map("buy_currency") @db.VarChar(3)
+  buyPriceGbp      Decimal   @map("buy_price_gbp") @db.Decimal(10, 2)
+
+  // Sell side
+  sellMarket       String    @map("sell_market") @db.VarChar(50)
+  sellPrice        Decimal   @map("sell_price") @db.Decimal(10, 2)
+  sellCurrency     String    @map("sell_currency") @db.VarChar(3)
+  sellPriceGbp     Decimal   @map("sell_price_gbp") @db.Decimal(10, 2)
+
+  // Spread analysis
+  grossSpread      Decimal   @map("gross_spread") @db.Decimal(6, 4)
+  estimatedFees    Decimal   @map("estimated_fees") @db.Decimal(6, 4)
+  estimatedShipping Decimal  @map("estimated_shipping") @db.Decimal(10, 2)
+  netSpread        Decimal   @map("net_spread") @db.Decimal(6, 4)
+
+  // Classification
+  confidence       Decimal   @db.Decimal(3, 2)
+  urgency          String    @db.VarChar(20) // 'immediate', 'short', 'medium', 'low'
+
+  // Outcome (filled by user feedback)
+  wasExecuted      Boolean?  @map("was_executed")
+  executionTimestamp DateTime? @map("execution_timestamp")
+  actualBuyPrice   Decimal?  @map("actual_buy_price") @db.Decimal(10, 2)
+  actualSellPrice  Decimal?  @map("actual_sell_price") @db.Decimal(10, 2)
+  actualProfit     Decimal?  @map("actual_profit") @db.Decimal(10, 2)
+  feedbackNotes    String?   @map("feedback_notes")
+
+  // Status
+  status           String    @default("active") @db.VarChar(20)
+  expiresAt        DateTime? @map("expires_at")
+
+  @@index([cardId, detectedAt(sort: Desc)], map: "idx_arbitrage_card_detected")
+  @@index([netSpread(sort: Desc)], map: "idx_arbitrage_net_spread")
+  @@index([status, expiresAt], map: "idx_arbitrage_status")
+  @@index([confidence(sort: Desc)], map: "idx_arbitrage_confidence")
+  @@map("arbitrage_opportunities")
+}
+
+// Raw price history from JustTCG API (180-day lookback)
+model JustTCGPriceHistory {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(50)
+  price           Decimal  @db.Decimal(10, 2)
+  priceTimestamp  DateTime @map("price_timestamp")
+  collectedAt     DateTime @default(now()) @map("collected_at")
+
+  @@unique([cardId, priceTimestamp], map: "idx_justtcg_history_unique")
+  @@index([cardId, priceTimestamp(sort: Desc)], map: "idx_justtcg_history_card")
+  @@map("justtcg_price_history")
+}
+
+// User feedback for model training
+model TrainingFeedback {
+  id               Int       @id @default(autoincrement())
+  feedbackType     String    @map("feedback_type") @db.VarChar(50)
+
+  // Reference to source data
+  referenceId      String?   @map("reference_id") @db.VarChar(100)
+  referenceType    String?   @map("reference_type") @db.VarChar(50)
+
+  // Feedback data (JSON for flexibility)
+  feedbackData     Json      @map("feedback_data")
+
+  // User info
+  userId           String?   @map("user_id") @db.VarChar(100)
+  userAccuracyScore Decimal? @map("user_accuracy_score") @db.Decimal(3, 2)
+
+  // Quality control
+  isVerified       Boolean   @default(false) @map("is_verified")
+  verificationSource String? @map("verification_source") @db.VarChar(50)
+
+  // Timestamps
+  createdAt        DateTime  @default(now()) @map("created_at")
+  verifiedAt       DateTime? @map("verified_at")
+
+  @@index([feedbackType, createdAt(sort: Desc)], map: "idx_training_feedback_type")
+  @@index([referenceType, referenceId], map: "idx_training_feedback_reference")
+  @@index([isVerified, feedbackType], map: "idx_training_feedback_verified")
+  @@map("training_feedback")
+}
+
+// User trade history for outcome tracking
+model TradeLog {
+  id               Int       @id @default(autoincrement())
+  cardId           String    @map("card_id") @db.VarChar(50)
+  userId           String?   @map("user_id") @db.VarChar(100)
+
+  // Trade details
+  action           String    @db.VarChar(10) // 'buy' | 'sell'
+  platform         String    @db.VarChar(50)
+  price            Decimal   @db.Decimal(10, 2)
+  currency         String    @db.VarChar(3)
+  priceGbp         Decimal   @map("price_gbp") @db.Decimal(10, 2)
+  quantity         Int       @default(1)
+  condition        String?   @db.VarChar(10)
+  shippingCost     Decimal?  @map("shipping_cost") @db.Decimal(10, 2)
+  fees             Decimal?  @db.Decimal(10, 2)
+
+  // Link buy/sell pairs
+  linkedTradeId    Int?      @map("linked_trade_id")
+  linkedTrade      TradeLog? @relation("LinkedTrades", fields: [linkedTradeId], references: [id])
+  linkedFromTrades TradeLog[] @relation("LinkedTrades")
+
+  // Model predictions at time of trade
+  modelPredictedReturn Decimal? @map("model_predicted_return") @db.Decimal(6, 4)
+  modelConfidence  Decimal?  @map("model_confidence") @db.Decimal(3, 2)
+
+  // Outcome (for closed positions)
+  isClosed         Boolean   @default(false) @map("is_closed")
+  actualReturn     Decimal?  @map("actual_return") @db.Decimal(6, 4)
+  holdingDays      Int?      @map("holding_days")
+
+  // Notes
+  notes            String?
+
+  // Timestamps
+  tradeDate        DateTime  @map("trade_date") @db.Date
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([cardId, tradeDate(sort: Desc)], map: "idx_trade_log_card")
+  @@index([userId, tradeDate(sort: Desc)], map: "idx_trade_log_user")
+  @@index([isClosed, action], map: "idx_trade_log_open")
+  @@map("trade_log")
+}
+
+// Track data collection job executions
+model CollectionJobStatus {
+  id                Int       @id @default(autoincrement())
+  jobName           String    @map("job_name") @db.VarChar(100)
+
+  // Execution info
+  startedAt         DateTime  @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  status            String    @default("running") @db.VarChar(20)
+
+  // Results
+  recordsProcessed  Int?      @map("records_processed")
+  recordsCreated    Int?      @map("records_created")
+  recordsUpdated    Int?      @map("records_updated")
+  errorsCount       Int       @default(0) @map("errors_count")
+
+  // Error details
+  errorMessage      String?   @map("error_message")
+  errorDetails      Json?     @map("error_details")
+
+  // Metadata
+  metadata          Json?
+
+  @@index([jobName, startedAt(sort: Desc)], map: "idx_collection_job_name")
+  @@index([status, startedAt(sort: Desc)], map: "idx_collection_job_status")
+  @@map("collection_job_status")
+}
+
+// ============================================================================
+// ML FEATURE STATISTICS TABLES
+// Pre-computed statistics for neural network feature calculation
+// ============================================================================
+
+// Daily rarity-level price statistics for percentile_in_rarity feature
+model RarityStatistics {
+  id              Int      @id @default(autoincrement())
+  game            String   @default("onepiece") @db.VarChar(50)
+  rarity          String   @db.VarChar(50)
+
+  // Price distribution percentiles (in GBP)
+  p10             Decimal  @db.Decimal(10, 2)
+  p25             Decimal  @db.Decimal(10, 2)
+  p50             Decimal  @db.Decimal(10, 2)
+  p75             Decimal  @db.Decimal(10, 2)
+  p90             Decimal  @db.Decimal(10, 2)
+  p95             Decimal  @db.Decimal(10, 2)
+  p99             Decimal  @db.Decimal(10, 2)
+
+  // Momentum metrics
+  momentum7d      Decimal? @map("momentum_7d") @db.Decimal(6, 4)
+  momentum30d     Decimal? @map("momentum_30d") @db.Decimal(6, 4)
+
+  // Card count in this rarity
+  cardCount       Int      @map("card_count")
+
+  // Average price for this rarity
+  avgPrice        Decimal  @map("avg_price") @db.Decimal(10, 2)
+
+  // Snapshot timestamp
+  snapshotDate    DateTime @map("snapshot_date") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([game, rarity, snapshotDate])
+  @@index([game, snapshotDate], map: "idx_rarity_stats_game_date")
+  @@index([rarity], map: "idx_rarity_stats_rarity")
+  @@map("rarity_statistics")
+}
+
+// Daily set-level statistics for set_momentum and correlation features
+model SetStatistics {
+  id              Int      @id @default(autoincrement())
+  game            String   @default("onepiece") @db.VarChar(50)
+  setCode         String   @map("set_code") @db.VarChar(20)
+
+  // Price metrics
+  avgPrice        Decimal  @map("avg_price") @db.Decimal(10, 2)
+  medianPrice     Decimal  @map("median_price") @db.Decimal(10, 2)
+  totalMarketCap  Decimal  @map("total_market_cap") @db.Decimal(14, 2)
+  minPrice        Decimal? @map("min_price") @db.Decimal(10, 2)
+  maxPrice        Decimal? @map("max_price") @db.Decimal(10, 2)
+
+  // Momentum metrics
+  momentum7d      Decimal? @map("momentum_7d") @db.Decimal(6, 4)
+  momentum30d     Decimal? @map("momentum_30d") @db.Decimal(6, 4)
+
+  // Card count
+  cardCount       Int      @map("card_count")
+
+  // Volatility
+  volatility7d    Decimal? @map("volatility_7d") @db.Decimal(6, 4)
+
+  // Snapshot timestamp
+  snapshotDate    DateTime @map("snapshot_date") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([game, setCode, snapshotDate])
+  @@index([game, snapshotDate], map: "idx_set_stats_game_date")
+  @@index([setCode], map: "idx_set_stats_set_code")
+  @@map("set_statistics")
+}
+
+// Daily correlation cache for card-to-set and card-to-rarity correlations
+model CardCorrelationCache {
+  id                  Int      @id @default(autoincrement())
+  cardId              String   @map("card_id") @db.VarChar(100)
+  game                String   @default("onepiece") @db.VarChar(50)
+
+  // Correlation coefficients (-1 to 1)
+  correlationToSet    Decimal? @map("correlation_to_set") @db.Decimal(5, 4)
+  correlationToRarity Decimal? @map("correlation_to_rarity") @db.Decimal(5, 4)
+  correlationDeviation Decimal? @map("correlation_deviation") @db.Decimal(5, 4)
+
+  // Sample size used for calculation
+  sampleDays          Int      @map("sample_days")
+
+  // Statistical significance
+  pValueSet           Decimal? @map("p_value_set") @db.Decimal(8, 6)
+  pValueRarity        Decimal? @map("p_value_rarity") @db.Decimal(8, 6)
+
+  // Snapshot timestamp
+  snapshotDate        DateTime @map("snapshot_date") @db.Date
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([cardId, snapshotDate])
+  @@index([cardId], map: "idx_card_correlation_card")
+  @@index([snapshotDate], map: "idx_card_correlation_date")
+  @@map("card_correlation_cache")
+}
+
+// Daily volume statistics for relative_volume normalization
+model VolumeStatistics {
+  id                  Int      @id @default(autoincrement())
+  game                String   @default("onepiece") @db.VarChar(50)
+
+  // Average listings counts (for relative_volume calculation)
+  avgUsListings       Decimal? @map("avg_us_listings") @db.Decimal(10, 2)
+  avgEuListings       Decimal? @map("avg_eu_listings") @db.Decimal(10, 2)
+  totalCardsTracked   Int      @map("total_cards_tracked")
+
+  // By rarity averages (JSON map)
+  avgListingsByRarity Json?    @map("avg_listings_by_rarity")
+
+  // Snapshot timestamp
+  snapshotDate        DateTime @map("snapshot_date") @db.Date
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([game, snapshotDate])
+  @@index([snapshotDate], map: "idx_volume_stats_date")
+  @@map("volume_statistics")
+}
+
+// ============================================================================
+// CARDMARKET PRICE ARCHIVE (Condition + Language Partitioned)
+// ============================================================================
+
+// Daily CardMarket price snapshot per card (aggregate across all conditions)
+model CardMarketPriceArchive {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Card metadata (denormalized for query efficiency)
+  game            String   @default("onepiece") @db.VarChar(50)
+  setCode         String?  @map("set_code") @db.VarChar(20)
+  cardNumber      String?  @map("card_number") @db.VarChar(20)
+  variantType     String?  @map("variant_type") @db.VarChar(50)
+  cardName        String?  @map("card_name") @db.VarChar(500)
+
+  // Aggregate prices (EUR - CardMarket native currency)
+  trendPriceEur   Decimal? @map("trend_price_eur") @db.Decimal(10, 2)
+  fromPriceEur    Decimal? @map("from_price_eur") @db.Decimal(10, 2)
+  avg7PriceEur    Decimal? @map("avg7_price_eur") @db.Decimal(10, 2)
+  avg30PriceEur   Decimal? @map("avg30_price_eur") @db.Decimal(10, 2)
+
+  // Converted to GBP (for arbitrage calculations)
+  trendPriceGbp   Decimal? @map("trend_price_gbp") @db.Decimal(10, 2)
+  fromPriceGbp    Decimal? @map("from_price_gbp") @db.Decimal(10, 2)
+  avg7PriceGbp    Decimal? @map("avg7_price_gbp") @db.Decimal(10, 2)
+  avg30PriceGbp   Decimal? @map("avg30_price_gbp") @db.Decimal(10, 2)
+
+  // Availability metrics
+  totalListings   Int?     @map("total_listings")
+  totalSellers    Int?     @map("total_sellers")
+
+  // Price change indicators
+  priceChange7d   Decimal? @map("price_change_7d") @db.Decimal(8, 4)
+  priceChange30d  Decimal? @map("price_change_30d") @db.Decimal(8, 4)
+
+  // FX rate used
+  eurGbpRate      Decimal? @map("eur_gbp_rate") @db.Decimal(12, 6)
+
+  // Source URL for verification
+  sourceUrl       String?  @map("source_url") @db.VarChar(500)
+
+  // Scrape metadata
+  scrapedAt       DateTime @default(now()) @map("scraped_at")
+  scrapeSuccess   Boolean  @default(true) @map("scrape_success")
+
+  // Relations
+  conditionPrices CardMarketConditionSnapshot[]
+
+  @@unique([cardId, date], map: "idx_cm_archive_unique")
+  @@index([cardId, date(sort: Desc)], map: "idx_cm_archive_card")
+  @@index([date(sort: Desc)], map: "idx_cm_archive_date")
+  @@index([setCode, date], map: "idx_cm_archive_set")
+  @@index([variantType, date], map: "idx_cm_archive_variant")
+  @@index([game, date], map: "idx_cm_archive_game")
+  @@map("cardmarket_price_archive")
+}
+
+// Condition-level price snapshot for detailed analysis
+// 7 conditions: MT (Mint), NM (Near Mint), EX (Excellent), GD (Good), LP (Light Played), PL (Played), PO (Poor)
+model CardMarketConditionSnapshot {
+  id              Int      @id @default(autoincrement())
+  archiveId       Int      @map("archive_id")
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Condition (1-7 mapped to codes)
+  // 1=MT, 2=NM, 3=EX, 4=GD, 5=LP, 6=PL, 7=PO
+  conditionId     Int      @map("condition_id")
+  conditionCode   String   @map("condition_code") @db.VarChar(5) // MT, NM, EX, GD, LP, PL, PO
+
+  // Language (primary language for this listing group)
+  // 1=English, 2=French, 3=German, 4=Spanish, 5=Italian, 6=Japanese, etc.
+  languageId      Int      @default(1) @map("language_id")
+  languageCode    String   @default("EN") @map("language_code") @db.VarChar(5)
+
+  // Prices for this condition (EUR)
+  fromPriceEur    Decimal? @map("from_price_eur") @db.Decimal(10, 2)
+  avgPriceEur     Decimal? @map("avg_price_eur") @db.Decimal(10, 2)
+  highPriceEur    Decimal? @map("high_price_eur") @db.Decimal(10, 2)
+
+  // Converted to GBP
+  fromPriceGbp    Decimal? @map("from_price_gbp") @db.Decimal(10, 2)
+  avgPriceGbp     Decimal? @map("avg_price_gbp") @db.Decimal(10, 2)
+  highPriceGbp    Decimal? @map("high_price_gbp") @db.Decimal(10, 2)
+
+  // Availability for this condition
+  listingsCount   Int?     @map("listings_count")
+  sellersCount    Int?     @map("sellers_count")
+
+  // Relation
+  archive         CardMarketPriceArchive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, date, conditionCode, languageCode], map: "idx_cm_condition_unique")
+  @@index([cardId, date, conditionCode], map: "idx_cm_condition_card")
+  @@index([date, conditionCode], map: "idx_cm_condition_date")
+  @@index([conditionCode, date], map: "idx_cm_condition_code")
+  @@index([languageCode, date], map: "idx_cm_condition_lang")
+  @@map("cardmarket_condition_snapshot")
+}
+
+// Seller listing snapshot for deep market analysis (optional, high volume)
+model CardMarketListingSnapshot {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Seller info
+  sellerName      String   @map("seller_name") @db.VarChar(200)
+  sellerCountry   String?  @map("seller_country") @db.VarChar(5)
+  sellerSales     Int?     @map("seller_sales")
+  sellerRating    Decimal? @map("seller_rating") @db.Decimal(3, 2)
+
+  // Item details
+  conditionCode   String   @map("condition_code") @db.VarChar(5)
+  languageCode    String   @default("EN") @map("language_code") @db.VarChar(5)
+  priceEur        Decimal  @map("price_eur") @db.Decimal(10, 2)
+  quantity        Int      @default(1)
+
+  // Item flags
+  isPlayset       Boolean  @default(false) @map("is_playset")
+  isSigned        Boolean  @default(false) @map("is_signed")
+  isFirstEd       Boolean  @default(false) @map("is_first_ed")
+  isAltered       Boolean  @default(false) @map("is_altered")
+
+  // Shipping info
+  shippingCountry String?  @map("shipping_country") @db.VarChar(5)
+
+  scrapedAt       DateTime @default(now()) @map("scraped_at")
+
+  @@index([cardId, date], map: "idx_cm_listing_card")
+  @@index([date, conditionCode], map: "idx_cm_listing_date_cond")
+  @@index([sellerCountry, date], map: "idx_cm_listing_country")
+  @@map("cardmarket_listing_snapshot")
+}
+
+// ============================================================================
+// TCGPLAYER PRICE ARCHIVE (USD + Condition/Printing Partitioned)
+// ============================================================================
+
+// Daily TCGPlayer price snapshot per card (aggregate across all conditions)
+model TCGPlayerPriceArchive {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Card metadata (denormalized for query efficiency)
+  game            String   @default("onepiece") @db.VarChar(50)
+  setCode         String?  @map("set_code") @db.VarChar(20)
+  setName         String?  @map("set_name") @db.VarChar(200)
+  cardNumber      String?  @map("card_number") @db.VarChar(20)
+  variantType     String?  @map("variant_type") @db.VarChar(50)
+  cardName        String?  @map("card_name") @db.VarChar(500)
+  rarity          String?  @db.VarChar(50)
+
+  // TCGPlayer product ID for API lookups
+  productId       String?  @map("product_id") @db.VarChar(50)
+
+  // Aggregate prices (USD - TCGPlayer native currency)
+  marketPriceUsd  Decimal? @map("market_price_usd") @db.Decimal(10, 2)
+  lowPriceUsd     Decimal? @map("low_price_usd") @db.Decimal(10, 2)
+  midPriceUsd     Decimal? @map("mid_price_usd") @db.Decimal(10, 2)
+  highPriceUsd    Decimal? @map("high_price_usd") @db.Decimal(10, 2)
+
+  // Converted to GBP (for arbitrage calculations)
+  marketPriceGbp  Decimal? @map("market_price_gbp") @db.Decimal(10, 2)
+  lowPriceGbp     Decimal? @map("low_price_gbp") @db.Decimal(10, 2)
+  midPriceGbp     Decimal? @map("mid_price_gbp") @db.Decimal(10, 2)
+  highPriceGbp    Decimal? @map("high_price_gbp") @db.Decimal(10, 2)
+
+  // Availability metrics
+  totalListings   Int?     @map("total_listings")
+  totalSellers    Int?     @map("total_sellers")
+
+  // Price change indicators (from JustTCG stats)
+  priceChange24h  Decimal? @map("price_change_24h") @db.Decimal(8, 4)
+  priceChange7d   Decimal? @map("price_change_7d") @db.Decimal(8, 4)
+  priceChange30d  Decimal? @map("price_change_30d") @db.Decimal(8, 4)
+  priceChange90d  Decimal? @map("price_change_90d") @db.Decimal(8, 4)
+
+  // Statistics (from JustTCG)
+  avgPriceUsd     Decimal? @map("avg_price_usd") @db.Decimal(10, 2)
+  stdDev          Decimal? @map("std_dev") @db.Decimal(10, 4)
+  trendSlope      Decimal? @map("trend_slope") @db.Decimal(10, 6)
+
+  // FX rate used
+  usdGbpRate      Decimal? @map("usd_gbp_rate") @db.Decimal(12, 6)
+
+  // Image URL
+  imageUrl        String?  @map("image_url") @db.VarChar(500)
+
+  // Source URL for verification
+  sourceUrl       String?  @map("source_url") @db.VarChar(500)
+
+  // Data source tracking: 'justtcg', 'brightdata', 'merged'
+  dataSource      String   @default("justtcg") @map("data_source") @db.VarChar(20)
+
+  // Scrape metadata
+  scrapedAt       DateTime @default(now()) @map("scraped_at")
+  scrapeSuccess   Boolean  @default(true) @map("scrape_success")
+
+  // Relations
+  conditionPrices TCGPlayerConditionSnapshot[]
+
+  @@unique([cardId, date], map: "idx_tcg_archive_unique")
+  @@index([cardId, date(sort: Desc)], map: "idx_tcg_archive_card")
+  @@index([date(sort: Desc)], map: "idx_tcg_archive_date")
+  @@index([setCode, date], map: "idx_tcg_archive_set")
+  @@index([variantType, date], map: "idx_tcg_archive_variant")
+  @@index([game, date], map: "idx_tcg_archive_game")
+  @@index([dataSource, date], map: "idx_tcg_archive_source")
+  @@map("tcgplayer_price_archive")
+}
+
+// Condition-level price snapshot for detailed analysis
+// TCGPlayer conditions: NM (Near Mint), LP (Lightly Played), MP (Moderately Played),
+//                       HP (Heavily Played), DMG (Damaged)
+model TCGPlayerConditionSnapshot {
+  id              Int      @id @default(autoincrement())
+  archiveId       Int      @map("archive_id")
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Condition (1-5 mapped to codes)
+  // 1=NM, 2=LP, 3=MP, 4=HP, 5=DMG
+  conditionId     Int      @map("condition_id")
+  conditionCode   String   @map("condition_code") @db.VarChar(5) // NM, LP, MP, HP, DMG
+  conditionName   String?  @map("condition_name") @db.VarChar(50)
+
+  // Printing type (Normal, Foil, Reverse Holo, etc.)
+  printing        String   @default("Normal") @db.VarChar(20)
+
+  // Prices for this condition (USD)
+  priceUsd        Decimal? @map("price_usd") @db.Decimal(10, 2)
+  lowPriceUsd     Decimal? @map("low_price_usd") @db.Decimal(10, 2)
+  avgPriceUsd     Decimal? @map("avg_price_usd") @db.Decimal(10, 2)
+  highPriceUsd    Decimal? @map("high_price_usd") @db.Decimal(10, 2)
+
+  // Converted to GBP
+  priceGbp        Decimal? @map("price_gbp") @db.Decimal(10, 2)
+  lowPriceGbp     Decimal? @map("low_price_gbp") @db.Decimal(10, 2)
+
+  // Availability for this condition
+  listingsCount   Int?     @map("listings_count")
+
+  // Relation
+  archive         TCGPlayerPriceArchive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, date, conditionCode, printing], map: "idx_tcg_condition_unique")
+  @@index([cardId, date, conditionCode], map: "idx_tcg_condition_card")
+  @@index([date, conditionCode], map: "idx_tcg_condition_date")
+  @@index([conditionCode, date], map: "idx_tcg_condition_code")
+  @@index([printing, date], map: "idx_tcg_condition_printing")
+  @@map("tcgplayer_condition_snapshot")
+}
+
+// Seller listing snapshot for deep market analysis
+model TCGPlayerListingSnapshot {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(100)
+  date            DateTime @db.Date
+
+  // Seller info
+  sellerName      String   @map("seller_name") @db.VarChar(200)
+  sellerRating    Decimal? @map("seller_rating") @db.Decimal(5, 2)
+  sellerSales     Int?     @map("seller_sales")
+
+  // Item details
+  conditionCode   String   @map("condition_code") @db.VarChar(5)
+  printing        String   @default("Normal") @db.VarChar(20)
+  priceUsd        Decimal  @map("price_usd") @db.Decimal(10, 2)
+  quantity        Int      @default(1)
+
+  // Shipping info
+  shippingUsd     Decimal? @map("shipping_usd") @db.Decimal(8, 2)
+  shipsFrom       String?  @map("ships_from") @db.VarChar(100)
+
+  // Item flags
+  isFoil          Boolean  @default(false) @map("is_foil")
+  isFirstEdition  Boolean  @default(false) @map("is_first_edition")
+
+  scrapedAt       DateTime @default(now()) @map("scraped_at")
+
+  @@index([cardId, date], map: "idx_tcg_listing_card")
+  @@index([date, conditionCode], map: "idx_tcg_listing_date_cond")
+  @@index([sellerName, date], map: "idx_tcg_listing_seller")
+  @@map("tcgplayer_listing_snapshot")
+}
+
+// 180-day price history from JustTCG API
+model TCGPlayerPriceHistory {
+  id              Int      @id @default(autoincrement())
+  cardId          String   @map("card_id") @db.VarChar(100)
+  priceUsd        Decimal  @map("price_usd") @db.Decimal(10, 2)
+  priceGbp        Decimal? @map("price_gbp") @db.Decimal(10, 2)
+  timestamp       DateTime
+
+  // Source tracking
+  dataSource      String   @default("justtcg") @map("data_source") @db.VarChar(20)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([cardId, timestamp], map: "idx_tcg_history_unique")
+  @@index([cardId, timestamp(sort: Desc)], map: "idx_tcg_history_card_time")
+  @@index([timestamp(sort: Desc)], map: "idx_tcg_history_time")
+  @@map("tcgplayer_price_history")
 }

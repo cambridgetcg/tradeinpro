@@ -1,0 +1,191 @@
+# Cambridge TCG - Targeted CardMarket Scraping Configuration
+#
+# This file defines which cards to monitor and scraping parameters.
+# Update the watchlist based on your current inventory needs.
+
+# =============================================================================
+# Scraping Schedule & Limits
+# =============================================================================
+scraping:
+  enabled: true
+
+  # Primary schedule: 3 AM UTC (4 AM CET, 3 AM GMT)
+  # Chosen for lowest CardMarket traffic
+  schedule: "0 3 * * *"
+  timezone: "UTC"
+
+  # Fallback if primary fails
+  fallback_schedule: "0 11 * * *"
+  max_daily_attempts: 2
+
+# =============================================================================
+# Request Limits (Be Respectful!)
+# =============================================================================
+limits:
+  # Maximum cards to scrape per day
+  max_cards_per_day: 100
+
+  # Delay between requests (seconds)
+  min_delay_seconds: 5
+  max_delay_seconds: 10
+
+  # Stop if too many failures
+  max_consecutive_failures: 5
+
+  # Session timeout
+  session_timeout_minutes: 30
+
+# =============================================================================
+# Caching Strategy
+# =============================================================================
+cache:
+  # Don't scrape if data is fresher than this
+  skip_if_fresher_than_hours: 24
+
+  # Use stale data if blocked
+  stale_while_revalidate_hours: 72
+
+  # Force refresh after this period
+  hard_expiry_days: 7
+
+# =============================================================================
+# Priority Configuration
+# =============================================================================
+priorities:
+  # P0: Cards in pending trade-in submissions (always scrape)
+  pending_tradeins:
+    enabled: true
+    max_age_hours: 12
+
+  # P1: High-value watchlist cards (daily)
+  watchlist:
+    enabled: true
+    max_age_hours: 24
+
+  # P2: Cards traded in last 7 days (every 3 days)
+  recent_trades:
+    enabled: true
+    max_age_hours: 72
+
+  # P3: Full catalog refresh (weekly, lower priority)
+  catalog:
+    enabled: false
+    max_age_hours: 168
+
+# =============================================================================
+# Cambridge TCG Watchlist
+# =============================================================================
+# High-priority cards to monitor daily regardless of trade-in activity
+watchlist:
+
+  # Secret Rares & High Value
+  secret_rares:
+    - "OP01-120"    # Shanks (Red) - ~€40-60
+    - "OP01-121"    # Shanks (Manga) - ~€100+
+    - "OP02-120"    # Portgas D. Ace - ~€35-50
+    - "OP02-121"    # Ace (Manga) - ~€80+
+    - "OP03-099"    # Charlotte Katakuri - ~€25-40
+    - "OP04-119"    # Yamato - ~€30-45
+    - "OP05-119"    # Monkey D. Luffy (Gear 5) - ~€50-80
+    - "OP06-119"    # Rob Lucci - ~€20-35
+    - "OP07-119"    # Enel - ~€25-40
+
+  # Leader Cards (always in demand)
+  leaders:
+    - "OP01-001"    # Roronoa Zoro
+    - "OP01-002"    # Trafalgar Law
+    - "OP01-003"    # Monkey D. Luffy
+    - "OP02-001"    # Edward Newgate
+    - "OP02-002"    # Kaido
+    - "OP03-001"    # Charlotte Katakuri
+    - "OP03-021"    # Nami
+    - "OP03-040"    # Sakazuki
+    - "OP04-001"    # Queen
+    - "OP04-019"    # Sanji
+
+  # Popular Alternate Arts (Parallel)
+  parallel_arts:
+    - "OP01-003-parallel"   # Luffy Alt Art
+    - "OP01-025-parallel"   # Zoro Alt Art
+    - "OP01-070-parallel"   # Mihawk Alt Art
+    - "OP02-099-parallel"   # Ace Alt Art
+    - "OP02-114-parallel"   # Whitebeard Alt Art
+    - "OP03-099-parallel"   # Katakuri Alt Art
+
+  # SP (Special) Cards from later sets
+  special_cards:
+    - "OP03-OP01-051-sp"    # Nami SP
+    - "OP03-OP02-036-sp"    # Makino SP
+    - "OP04-OP01-017-sp"    # Sanji SP
+    - "OP05-OP01-025-sp"    # Zoro SP
+
+  # Staple Cards (high trade volume)
+  staples:
+    - "ST01-012"    # Nami (Starter)
+    - "ST01-013"    # Roronoa Zoro (Starter)
+    - "OP01-029"    # Radical Beam!!
+    - "OP02-036"    # Makino
+    - "OP03-047"    # Hound Blaze
+    - "OP04-031"    # You Can Be Myستی
+
+# =============================================================================
+# Sets to Monitor (for catalog refresh)
+# =============================================================================
+sets:
+  active:
+    - "OP01"   # Romance Dawn
+    - "OP02"   # Paramount War
+    - "OP03"   # Pillars of Strength
+    - "OP04"   # Kingdoms of Intrigue
+    - "OP05"   # Awakening of the New Era
+    - "OP06"   # Wings of the Captain
+    - "OP07"   # 500 Years in the Future
+    - "EB01"   # Memorial Collection
+
+  starters:
+    - "ST01"   # Straw Hat Crew
+    - "ST02"   # Worst Generation
+    - "ST03"   # The Seven Warlords
+    - "ST04"   # Animal Kingdom Pirates
+    - "ST05"   # Film Edition
+    - "ST10"   # The Three Captains
+
+# =============================================================================
+# Browser Configuration
+# =============================================================================
+browser:
+  headless: true
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  viewport:
+    width: 1920
+    height: 1080
+  locale: "en-GB"
+  timezone: "Europe/London"
+
+# =============================================================================
+# Alerting
+# =============================================================================
+alerts:
+  # Thresholds
+  blocked_threshold: 3
+  success_rate_warning: 90
+  success_rate_critical: 50
+
+  # Channels
+  channels:
+    slack:
+      enabled: false
+      webhook_url: ""
+      channel: "#tcg-ops"
+
+    email:
+      enabled: true
+      recipients:
+        - "ops@cambridgetcg.com"
+      on_events:
+        - "critical_failure"
+        - "weekly_summary"
+
+    console:
+      enabled: true
+      level: "info"

@@ -1,0 +1,28 @@
+{
+  "name": "ebay-data-pipeline",
+  "version": "0.1.0",
+  "description": "eBay TCG listing data extraction pipeline",
+  "type": "module",
+  "scripts": {
+    "test:api": "npx tsx src/test-api-access.ts",
+    "test:serpapi": "npx tsx src/test-serpapi.ts",
+    "test:queries": "npx tsx src/test-query-strategies.ts",
+    "test:images": "npx tsx src/test-image-availability.ts",
+    "collect": "npx tsx src/collect-images.ts",
+    "collect:dry": "npx tsx src/collect-images.ts --dry-run --verbose",
+    "collect:priority1": "npx tsx src/collect-images.ts --priority=1 --verbose",
+    "collect:all": "npx tsx src/collect-images.ts --priority=5 --verbose",
+    "stats": "npx tsx src/collect-images.ts --stats",
+    "labels": "npx tsx src/collect-images.ts --generate-labels",
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

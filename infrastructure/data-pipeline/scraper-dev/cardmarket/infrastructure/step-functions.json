@@ -1,0 +1,305 @@
+{
+  "Comment": "Cardmarket Price Scraping Pipeline - Orchestrates data extraction, transformation, and loading",
+  "StartAt": "InitializePipeline",
+  "States": {
+    "InitializePipeline": {
+      "Type": "Pass",
+      "Comment": "Initialize pipeline metadata",
+      "Parameters": {
+        "runId.$": "States.Format('pipeline_{}', $$.Execution.StartTime)",
+        "startTime.$": "$$.Execution.StartTime",
+        "sets.$": "$.sets",
+        "options.$": "$.options"
+      },
+      "ResultPath": "$.metadata",
+      "Next": "ProcessSets"
+    },
+
+    "ProcessSets": {
+      "Type": "Map",
+      "Comment": "Process each set sequentially to avoid rate limiting",
+      "ItemsPath": "$.sets",
+      "MaxConcurrency": 1,
+      "Parameters": {
+        "setCode.$": "$$.Map.Item.Value",
+        "runId.$": "$.metadata.runId",
+        "options.$": "$.options"
+      },
+      "Iterator": {
+        "StartAt": "ScrapeSet",
+        "States": {
+          "ScrapeSet": {
+            "Type": "Task",
+            "Comment": "Scrape all cards from a set using Playwright",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-scraper",
+            "Parameters": {
+              "action": "scrape",
+              "setCode.$": "$.setCode",
+              "options.$": "$.options"
+            },
+            "ResultPath": "$.scrapeResult",
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                "IntervalSeconds": 60,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              },
+              {
+                "ErrorEquals": ["RateLimitError", "CircuitBreakerOpen"],
+                "IntervalSeconds": 300,
+                "MaxAttempts": 3,
+                "BackoffRate": 1.5
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "RecordSetFailure"
+              }
+            ],
+            "Next": "StoreRawData"
+          },
+
+          "StoreRawData": {
+            "Type": "Task",
+            "Comment": "Store raw scraped data to S3",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-store",
+            "Parameters": {
+              "action": "store",
+              "setCode.$": "$.setCode",
+              "runId.$": "$.runId",
+              "data.$": "$.scrapeResult"
+            },
+            "ResultPath": "$.storeResult",
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException"],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "RecordSetFailure"
+              }
+            ],
+            "Next": "TransformData"
+          },
+
+          "TransformData": {
+            "Type": "Task",
+            "Comment": "Transform and validate scraped data",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-transform",
+            "Parameters": {
+              "action": "transform",
+              "setCode.$": "$.setCode",
+              "cards.$": "$.scrapeResult.cards"
+            },
+            "ResultPath": "$.transformResult",
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException"],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "RecordSetFailure"
+              }
+            ],
+            "Next": "CheckValidRecords"
+          },
+
+          "CheckValidRecords": {
+            "Type": "Choice",
+            "Comment": "Check if we have valid records to load",
+            "Choices": [
+              {
+                "Variable": "$.transformResult.validCount",
+                "NumericGreaterThan": 0,
+                "Next": "LoadToDatabase"
+              }
+            ],
+            "Default": "RecordSetFailure"
+          },
+
+          "LoadToDatabase": {
+            "Type": "Task",
+            "Comment": "Load transformed data to RDS",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-load",
+            "Parameters": {
+              "action": "load",
+              "setCode.$": "$.setCode",
+              "records.$": "$.transformResult.valid"
+            },
+            "ResultPath": "$.loadResult",
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException", "DatabaseError"],
+                "IntervalSeconds": 10,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "RecordSetFailure"
+              }
+            ],
+            "Next": "SetCompleted"
+          },
+
+          "SetCompleted": {
+            "Type": "Pass",
+            "Comment": "Mark set processing as completed",
+            "Parameters": {
+              "setCode.$": "$.setCode",
+              "status": "completed",
+              "cardsScraped.$": "$.scrapeResult.cardCount",
+              "cardsLoaded.$": "$.loadResult.upsertedCount",
+              "s3Key.$": "$.storeResult.key"
+            },
+            "End": true
+          },
+
+          "RecordSetFailure": {
+            "Type": "Task",
+            "Comment": "Record failure and send to DLQ",
+            "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-error-handler",
+            "Parameters": {
+              "action": "recordFailure",
+              "setCode.$": "$.setCode",
+              "runId.$": "$.runId",
+              "error.$": "$.error"
+            },
+            "ResultPath": "$.failureResult",
+            "Next": "SetFailed"
+          },
+
+          "SetFailed": {
+            "Type": "Pass",
+            "Comment": "Mark set processing as failed",
+            "Parameters": {
+              "setCode.$": "$.setCode",
+              "status": "failed",
+              "error.$": "$.error"
+            },
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.setResults",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.mapError",
+          "Next": "PipelineFailed"
+        }
+      ],
+      "Next": "CheckForTrainingExport"
+    },
+
+    "CheckForTrainingExport": {
+      "Type": "Choice",
+      "Comment": "Check if training export is requested",
+      "Choices": [
+        {
+          "Variable": "$.options.generateTrainingExport",
+          "BooleanEquals": true,
+          "Next": "GenerateTrainingExport"
+        }
+      ],
+      "Default": "CalculateSummary"
+    },
+
+    "GenerateTrainingExport": {
+      "Type": "Task",
+      "Comment": "Generate ML training data export",
+      "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-export",
+      "Parameters": {
+        "action": "exportTraining",
+        "runId.$": "$.metadata.runId"
+      },
+      "ResultPath": "$.exportResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.exportError",
+          "Next": "CalculateSummary"
+        }
+      ],
+      "Next": "CalculateSummary"
+    },
+
+    "CalculateSummary": {
+      "Type": "Pass",
+      "Comment": "Calculate pipeline summary statistics",
+      "Parameters": {
+        "runId.$": "$.metadata.runId",
+        "status": "completed",
+        "setsProcessed.$": "States.ArrayLength($.setResults)",
+        "totalCardsScraped.$": "States.MathAdd($.setResults[*].cardsScraped)",
+        "totalCardsLoaded.$": "States.MathAdd($.setResults[*].cardsLoaded)",
+        "setResults.$": "$.setResults"
+      },
+      "Next": "RecordPipelineSuccess"
+    },
+
+    "RecordPipelineSuccess": {
+      "Type": "Task",
+      "Comment": "Record successful pipeline completion",
+      "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-metrics",
+      "Parameters": {
+        "action": "recordSuccess",
+        "runId.$": "$.metadata.runId",
+        "summary.$": "$"
+      },
+      "ResultPath": "$.metricsResult",
+      "Next": "PipelineCompleted"
+    },
+
+    "PipelineCompleted": {
+      "Type": "Succeed",
+      "Comment": "Pipeline completed successfully"
+    },
+
+    "PipelineFailed": {
+      "Type": "Task",
+      "Comment": "Record pipeline failure",
+      "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:cardmarket-metrics",
+      "Parameters": {
+        "action": "recordFailure",
+        "runId.$": "$.metadata.runId",
+        "error.$": "$.mapError"
+      },
+      "ResultPath": "$.failureMetrics",
+      "Next": "FailPipeline"
+    },
+
+    "FailPipeline": {
+      "Type": "Fail",
+      "Comment": "Pipeline failed",
+      "Cause": "Pipeline execution failed",
+      "Error": "PipelineError"
+    }
+  }
+}
