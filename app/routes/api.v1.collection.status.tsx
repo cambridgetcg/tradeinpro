@@ -5,7 +5,6 @@
  */
 
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { getAllJobStates, JOB_CONFIGS } from "~/lib/data-collection";
 
 // =============================================================================
 // LOADER - Get collection status
@@ -13,6 +12,8 @@ import { getAllJobStates, JOB_CONFIGS } from "~/lib/data-collection";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { prisma } = await import("../db.server");
+  const dataCollection = await import("../lib/data-collection/index");
+  const { getAllJobStates, JOB_CONFIGS } = dataCollection;
 
   // Get job states
   const jobStates = getAllJobStates();
@@ -146,12 +147,13 @@ export async function action({ request }: ActionFunctionArgs) {
     const body = await request.json();
     const { action: jobAction, jobId } = body as { action: string; jobId?: string };
 
+    const dataCollection = await import("../lib/data-collection/index");
     const {
       runOPTCGSync,
       runJustTCGFullRefresh,
       runJustTCGTopMovers,
       runFXRatesRefresh,
-    } = await import("~/lib/data-collection");
+    } = dataCollection;
 
     switch (jobAction) {
       case "run": {

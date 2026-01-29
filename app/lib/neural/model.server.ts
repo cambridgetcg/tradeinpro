@@ -5,7 +5,10 @@
  * Multi-task LSTM network with attention for sequence processing.
  */
 
-import * as tf from "@tensorflow/tfjs-node";
+// TEMPORARILY DISABLED - TensorFlow exceeds Vercel's 250MB serverless limit
+// import * as tf from "@tensorflow/tfjs-node";
+// TODO: Re-enable when using dedicated compute (Lambda/EC2) for ML inference
+const tf = null as any; // Stub to allow compilation
 import { getShardClient } from "../shard.server";
 import {
   DealPrediction,
