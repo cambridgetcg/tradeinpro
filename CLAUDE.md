@@ -1,8 +1,8 @@
-# CardForum - Project Context
+# TradeIn Pro - Project Context
 
 ## Purpose
 
-CardForum is a **trade-in management system** for a trading card business. It enables:
+TradeIn Pro is a **trade-in management system** for a trading card business. It enables:
 
 1. **Customers** to submit cards for trade-in via a Shopify storefront
 2. **Staff** to receive, grade, and process submissions

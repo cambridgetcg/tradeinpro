@@ -1,10 +1,10 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "5557b953bcda2461a34b606d9e8cf170"
-name = "CardForum Trade-In"
-application_url = "https://cardforum.vercel.app"
+name = "TradeIn Pro"
+application_url = "https://tradeinpro.vercel.app"
 embedded = true
-handle = "cardforum-tradein"
+handle = "tradeinpro"
 
 [build]
 automatically_update_urls_on_dev = true
@@ -35,9 +35,9 @@ subpath = "trade-in"
 
 [auth]
 redirect_urls = [
-  "https://cardforum.vercel.app/auth/callback",
-  "https://cardforum.vercel.app/auth/shopify/callback",
-  "https://cardforum.vercel.app/api/auth/callback"
+  "https://tradeinpro.vercel.app/auth/callback",
+  "https://tradeinpro.vercel.app/auth/shopify/callback",
+  "https://tradeinpro.vercel.app/api/auth/callback"
 ]
 
 [pos]

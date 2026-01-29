@@ -1,5 +1,5 @@
 {
-  "name": "cardforum",
+  "name": "tradeinpro",
   "private": true,
   "scripts": {
     "build": "prisma generate && react-router build",
