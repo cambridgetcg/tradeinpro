@@ -42,7 +42,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const limit = parseInt(url.searchParams.get("limit") || "50", 10);
   const status = url.searchParams.get("status") || "pending";
 
-  const prisma = (await import("~/db.server")).prisma;
+  const { prisma } = await import("../db.server");
 
   // Get opportunities that need feedback
   const opportunities = await prisma.arbitrageOpportunity.findMany({
@@ -130,7 +130,7 @@ export async function action({ request }: ActionFunctionArgs) {
       } as FeedbackResponse;
     }
 
-    const prisma = (await import("~/db.server")).prisma;
+    const { prisma } = await import("../db.server");
 
     // Update the opportunity with feedback
     const updated = await prisma.arbitrageOpportunity.update({
@@ -196,7 +196,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export async function batchFeedback(
   feedbackItems: FeedbackSubmission[]
 ): Promise<{ success: number; failed: number; errors: string[] }> {
-  const prisma = (await import("~/db.server")).prisma;
+  const { prisma } = await import("../db.server");
   const errors: string[] = [];
   let success = 0;
   let failed = 0;
