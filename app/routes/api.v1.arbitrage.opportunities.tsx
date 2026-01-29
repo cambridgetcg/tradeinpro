@@ -51,7 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const sortBy = url.searchParams.get("sortBy") || "netSpread";
   const sortOrder = url.searchParams.get("sortOrder") || "desc";
 
-  const prisma = (await import("~/db.server")).prisma;
+  const { prisma } = await import("../db.server");
 
   // Build where clause
   const where: Record<string, unknown> = {

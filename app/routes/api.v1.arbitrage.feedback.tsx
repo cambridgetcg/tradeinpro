@@ -188,38 +188,3 @@ export async function action({ request }: ActionFunctionArgs) {
     } as FeedbackResponse;
   }
 }
-
-// =============================================================================
-// BATCH FEEDBACK ENDPOINT
-// =============================================================================
-
-export async function batchFeedback(
-  feedbackItems: FeedbackSubmission[]
-): Promise<{ success: number; failed: number; errors: string[] }> {
-  const { prisma } = await import("../db.server");
-  const errors: string[] = [];
-  let success = 0;
-  let failed = 0;
-
-  for (const feedback of feedbackItems) {
-    try {
-      await prisma.arbitrageOpportunity.update({
-        where: { id: feedback.opportunityId },
-        data: {
-          wasExecuted: feedback.wasExecuted,
-          wasSuccessful: feedback.wasSuccessful,
-          actualProfit: feedback.actualProfit,
-          feedbackAt: new Date(),
-        },
-      });
-      success++;
-    } catch (error) {
-      failed++;
-      errors.push(
-        `Failed to update ${feedback.opportunityId}: ${error instanceof Error ? error.message : "Unknown"}`
-      );
-    }
-  }
-
-  return { success, failed, errors };
-}

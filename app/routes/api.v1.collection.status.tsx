@@ -12,7 +12,7 @@ import { getAllJobStates, JOB_CONFIGS } from "~/lib/data-collection";
 // =============================================================================
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const prisma = (await import("~/db.server")).prisma;
+  const { prisma } = await import("../db.server");
 
   // Get job states
   const jobStates = getAllJobStates();
