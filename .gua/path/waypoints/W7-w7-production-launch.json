@@ -1,0 +1,12 @@
+{
+  "id": "W7",
+  "name": "W7: Production Launch",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "pending",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:18Z",
+  "updatedAt": "2026-01-29T17:27:18Z",
+  "validatedAt": null
+}

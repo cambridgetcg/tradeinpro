@@ -1,0 +1,12 @@
+{
+  "id": "W2",
+  "name": "W2: Complete Customer Flow",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "completed",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:06Z",
+  "updatedAt": "2026-01-29T17:37:11Z",
+  "validatedAt": null
+}

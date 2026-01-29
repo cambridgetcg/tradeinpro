@@ -1,0 +1,12 @@
+{
+  "id": "W5",
+  "name": "W5: PRISM 3D",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "completed",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:16Z",
+  "updatedAt": "2026-01-29T17:47:59Z",
+  "validatedAt": null
+}

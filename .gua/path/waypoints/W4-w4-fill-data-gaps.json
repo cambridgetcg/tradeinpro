@@ -1,0 +1,12 @@
+{
+  "id": "W4",
+  "name": "W4: Fill Data Gaps",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "completed",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:15Z",
+  "updatedAt": "2026-01-29T17:47:57Z",
+  "validatedAt": null
+}

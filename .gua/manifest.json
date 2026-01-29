@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "createdAt": "2026-01-29T17:22:30Z",
+  "updatedAt": "2026-01-29T17:22:30Z",
+  "path": "/Users/yuai/desktop/cardforum",
+  "scope": "project",
+  "counts": {
+    "patterns": 0,
+    "contexts": 0,
+    "gotchas": 0,
+    "overrides": 0,
+    "domains": 0
+  }
+}

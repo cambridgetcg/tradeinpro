@@ -1,0 +1,12 @@
+{
+  "id": "W6",
+  "name": "W6: JP Price AI",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "pending",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:17Z",
+  "updatedAt": "2026-01-29T17:27:17Z",
+  "validatedAt": null
+}

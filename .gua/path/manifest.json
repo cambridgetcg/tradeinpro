@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "project": "cardforum",
+  "createdAt": "2026-01-29T17:22:30Z",
+  "updatedAt": "2026-01-29T17:47:59Z",
+  "currentWaypoint": "W1",
+  "waypointCount": 7,
+  "purposeDefined": false,
+  "stateDefined": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "W3",
+  "name": "W3: Launch Beta",
+  "predecessor": "--description",
+  "successor": null,
+  "status": "pending",
+  "impl": 0,
+  "depth": "L0",
+  "createdAt": "2026-01-29T17:27:07Z",
+  "updatedAt": "2026-01-29T17:39:04Z",
+  "validatedAt": null
+}

@@ -21,6 +21,7 @@ import {
   SubmissionStatusLabels,
   formatPrice,
 } from "../lib/constants";
+import { PipelineStatus } from "../components/PipelineStatus";
 
 interface DashboardStats {
   pendingArrival: number;
@@ -423,8 +424,13 @@ export default function Dashboard() {
           </Card>
         </InlineGrid>
 
-        {/* Value Summary */}
-        <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+        {/* Pipeline Health + Value Summary */}
+        <InlineGrid columns={{ xs: 1, md: "1fr 2fr" }} gap="400">
+          {/* Pipeline Status */}
+          <PipelineStatus autoRefreshMinutes={5} />
+
+          {/* Value Summary */}
+          <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
           <Card>
             <BlockStack gap="200">
               <Text as="p" variant="bodyMd" tone="subdued">Pending Trade-In Value</Text>
@@ -450,6 +456,7 @@ export default function Dashboard() {
               </Link>
             </BlockStack>
           </Card>
+          </InlineGrid>
         </InlineGrid>
 
         {/* Recent Activity */}
