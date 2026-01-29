@@ -128,4 +128,5 @@ export async function disconnect(): Promise<void> {
   console.log("[db.server] Disconnected from database");
 }
 
+export { prisma };
 export default prisma;
