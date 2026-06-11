@@ -1,0 +1,8 @@
+name: tradeinpro
+kind: venture
+layer: commerce
+owner_sister: none
+domain: commerce
+state: active
+purpose: Shopify trade-in app — receive, grade, price, and pay out customer cards.
+dependsOn: [tcg-pricing-backend]
