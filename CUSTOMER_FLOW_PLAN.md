@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Design a frictionless, mobile-first trade-in experience that guides customers from price discovery through submission completion and tracking. The goal is maximum conversion with minimum effort.
+Help people understand card price estimates, submission terms and the status of existing trade-ins. This design is a reference for clear choices and record handling; it creates no conversion target or launch obligation.
 
 ---
 
@@ -58,7 +58,7 @@ Design a frictionless, mobile-first trade-in experience that guides customers fr
 
 ### 1.1 Landing Page (`/pages/trade-in`)
 
-**Purpose**: Introduce the service and drive action
+**Purpose**: Explain the service, its terms and how to inspect prices without commitment
 
 **Layout**:
 ```
@@ -603,16 +603,12 @@ CardForum Trade-Ins
 
 ---
 
-## Success Metrics
+## Review Questions
 
-| Metric | Target | How to Measure |
-|--------|--------|----------------|
-| Submission Conversion | >50% of started carts | Analytics |
-| Time to Submit | <5 minutes | Session timing |
-| Cart Abandonment | <30% | localStorage analysis |
-| Mobile Completion | >40% of submissions | Device tracking |
-| Return Rate | <5% | Business metrics |
-| Customer Satisfaction | >4.5/5 | Post-submission survey |
+- Are estimated prices, grading changes and payout terms clear?
+- Can someone inspect prices without submitting a trade-in?
+- Can existing participants track a submission, inspect evidence or request a return?
+- Are consent, contact details and agreed obligations preserved?
 
 ---
 
